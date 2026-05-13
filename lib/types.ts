@@ -1,0 +1,56 @@
+export type WeatherCondition = "clear" | "cloudy" | "rain" | "snow" | "hot" | "cold";
+
+export type SuggestionCategory =
+  | "outdoors"
+  | "culture"
+  | "food"
+  | "fitness"
+  | "social"
+  | "productive"
+  | "creative"
+  | "rest";
+
+export type CostLevel = "free" | "low" | "medium" | "high";
+export type EnergyLevel = "low" | "medium" | "high";
+export type SocialSetting = "solo" | "pair" | "group" | "flexible";
+
+export type DayContext = {
+  city: string;
+  weather: WeatherCondition;
+  temperatureF: number;
+  availableHours: number;
+  budget: CostLevel;
+  energy: EnergyLevel;
+  social: SocialSetting;
+  preferenceTags: string[];
+};
+
+export type Suggestion = {
+  id: string;
+  title: string;
+  category: SuggestionCategory;
+  description: string;
+  locationLabel: string;
+  cost: CostLevel;
+  distanceMiles: number;
+  durationHours: number;
+  energy: EnergyLevel;
+  social: SocialSetting;
+  weatherFit: WeatherCondition[];
+  tags: string[];
+  source: "event" | "city" | "everyday" | "productive";
+};
+
+export type ScoredSuggestion = Suggestion & {
+  score: number;
+  ruleScore: number;
+  modelProbability: number;
+  reasons: string[];
+};
+
+export type FeedbackRecord = {
+  userId: string;
+  suggestionId: string;
+  liked: boolean;
+  features: Record<string, number>;
+};

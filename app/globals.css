@@ -1,0 +1,343 @@
+:root {
+  --ink: #20221f;
+  --muted: #646b61;
+  --line: #d9ddd4;
+  --panel: #fbfbf7;
+  --paper: #ffffff;
+  --sage: #6d8b74;
+  --teal: #247b7b;
+  --rose: #b85b63;
+  --gold: #c49a2c;
+  --sky: #dbeaf1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: linear-gradient(135deg, #eef5ef 0%, #f8f7ef 42%, #eef6f8 100%);
+  color: var(--ink);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: minmax(300px, 390px) 1fr;
+  min-height: 100vh;
+}
+
+.controlPane {
+  background: rgba(251, 251, 247, 0.92);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 28px;
+}
+
+.brandRow {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  margin-bottom: 4px;
+}
+
+.brandMark {
+  align-items: center;
+  background: var(--teal);
+  border-radius: 8px;
+  color: white;
+  display: grid;
+  height: 42px;
+  justify-items: center;
+  width: 42px;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.45rem;
+}
+
+.brandRow p,
+.field span,
+.eyebrow,
+.metric span,
+.source {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field span {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+  font-weight: 700;
+}
+
+input,
+select {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  min-height: 42px;
+  padding: 0 12px;
+  width: 100%;
+}
+
+.grid2 {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.tags,
+.reasonRow,
+.metaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag,
+.pill,
+.reasonRow span,
+.metaRow span {
+  border-radius: 999px;
+  font-size: 0.78rem;
+  line-height: 1;
+  padding: 8px 10px;
+}
+
+.tag {
+  background: #edf1e8;
+  border: 1px solid transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.tag.selected {
+  background: var(--sky);
+  border-color: #abc6d3;
+}
+
+.primaryButton,
+.iconButton {
+  align-items: center;
+  border: 0;
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.primaryButton {
+  background: var(--ink);
+  border-radius: 8px;
+  color: white;
+  gap: 9px;
+  min-height: 46px;
+}
+
+.primaryButton:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.resultsPane {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 34px;
+}
+
+.todayBar {
+  align-items: flex-start;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+}
+
+.todayBar h2 {
+  font-size: clamp(2rem, 5vw, 4.5rem);
+  letter-spacing: 0;
+  line-height: 0.98;
+  max-width: 920px;
+}
+
+.scoreBadge {
+  align-items: center;
+  background: var(--rose);
+  border-radius: 8px;
+  color: white;
+  display: grid;
+  flex: 0 0 auto;
+  font-size: 1.1rem;
+  font-weight: 800;
+  height: 64px;
+  justify-items: center;
+  width: 74px;
+}
+
+.summaryStrip {
+  align-items: center;
+  background: #fff7df;
+  border: 1px solid #ecdca8;
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.summaryStrip p {
+  color: #4f4428;
+}
+
+.insightGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.metric {
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  min-height: 112px;
+  padding: 16px;
+}
+
+.metric strong {
+  font-size: 1.05rem;
+  overflow-wrap: anywhere;
+}
+
+.suggestionList {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.suggestionCard {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  min-height: 260px;
+  padding: 18px;
+}
+
+.cardTop {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.source {
+  text-transform: uppercase;
+}
+
+.suggestionCard h3 {
+  font-size: 1.2rem;
+  line-height: 1.2;
+  margin-top: 4px;
+}
+
+.suggestionCard p {
+  color: #4d534a;
+  line-height: 1.45;
+}
+
+.pill {
+  background: #e4f0ee;
+  color: #165f60;
+  font-weight: 800;
+}
+
+.metaRow span {
+  background: #f1f2ed;
+  color: #555d52;
+}
+
+.reasonRow span {
+  background: #eff5e9;
+  color: #46623f;
+}
+
+.feedbackRow {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.iconButton {
+  background: #edf1e8;
+  border-radius: 8px;
+  color: var(--ink);
+  height: 38px;
+  width: 42px;
+}
+
+.iconButton.active {
+  background: var(--gold);
+  color: white;
+}
+
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .controlPane {
+    border-bottom: 1px solid var(--line);
+    border-right: 0;
+  }
+
+  .insightGrid,
+  .suggestionList {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .controlPane,
+  .resultsPane {
+    padding: 20px;
+  }
+
+  .grid2 {
+    grid-template-columns: 1fr;
+  }
+
+  .todayBar {
+    flex-direction: column;
+  }
+
+  .todayBar h2 {
+    font-size: 2.35rem;
+  }
+}
