@@ -25,6 +25,7 @@ type PlannerResponse = {
 };
 
 const tagOptions = ["fresh-air", "food", "focus", "art", "movement", "connection", "creative", "low-planning"];
+const userStorageKey = "day-planner-user-id";
 
 const initialContext: DayContext = {
   city: "Toronto",
@@ -42,15 +43,16 @@ export default function Home() {
   const [data, setData] = useState<PlannerResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [feedbackState, setFeedbackState] = useState<Record<string, boolean>>({});
+  const [userId, setUserId] = useState<string | null>(null);
 
   const topSuggestion = data?.suggestions[0];
 
-  async function loadRecommendations(nextContext = context) {
+  async function loadRecommendations(nextContext = context, nextUserId = userId) {
     setLoading(true);
     const response = await fetch("/api/recommend", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...nextContext, userId: "demo-user" })
+      body: JSON.stringify({ ...nextContext, userId: nextUserId })
     });
     const payload = (await response.json()) as PlannerResponse;
     setData(payload);
@@ -63,13 +65,17 @@ export default function Home() {
     await fetch("/api/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: "demo-user", suggestionId: suggestion.id, liked, context })
+      body: JSON.stringify({ userId, suggestionId: suggestion.id, liked, context })
     });
     await loadRecommendations();
   }
 
   useEffect(() => {
-    void loadRecommendations(initialContext);
+    const existingUserId = window.localStorage.getItem(userStorageKey);
+    const nextUserId = existingUserId || window.crypto.randomUUID();
+    window.localStorage.setItem(userStorageKey, nextUserId);
+    setUserId(nextUserId);
+    void loadRecommendations(initialContext, nextUserId);
   }, []);
 
   const categoryMix = useMemo(() => {

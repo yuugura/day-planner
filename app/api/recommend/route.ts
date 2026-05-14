@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     city: body.city?.trim() || defaultContext.city,
     preferenceTags: Array.isArray(body.preferenceTags) ? body.preferenceTags : defaultContext.preferenceTags
   };
-  const userId = body.userId || "demo-user";
+  const userId = body.userId?.trim() || "anonymous-user";
   const feedback = await readFeedback(userId);
   const suggestions = rankSuggestions(demoSuggestions, context, feedback);
   const summary = await summarizePlan(context, suggestions).catch(() => "");

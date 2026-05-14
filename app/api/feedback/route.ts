@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   }
 
   await writeFeedback({
-    userId: body.userId || "demo-user",
+    userId: body.userId?.trim() || "anonymous-user",
     suggestionId: suggestion.id,
     liked: body.liked,
     features: extractFeatures(suggestion, body.context)

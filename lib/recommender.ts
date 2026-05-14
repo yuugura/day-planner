@@ -122,9 +122,8 @@ export function rankSuggestions(
   context: DayContext,
   feedback: FeedbackRecord[]
 ): ScoredSuggestion[] {
-  const userFeedback = feedback.filter((record) => record.userId === "demo-user");
-  const weights = trainLogisticRegression(userFeedback);
-  const hasEnoughTrainingData = userFeedback.length >= 4;
+  const weights = trainLogisticRegression(feedback);
+  const hasEnoughTrainingData = feedback.length >= 4;
 
   return suggestions
     .map((suggestion, index) => {

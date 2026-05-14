@@ -4,14 +4,32 @@ A Next.js app for deciding what to do today using city context, weather, activit
 
 ## Environment
 
-Create `.env.local` when you want live integrations:
+Use `.env.example` as the safe template, then put real local values in `.env.local`:
 
 ```bash
-DATABASE_URL="postgres://user:password@localhost:5432/day_planner"
+cp .env.example .env.local
+```
+
+```bash
+DATABASE_URL="postgres://day_planner:day_planner@localhost:5433/day_planner"
 GEMINI_API_KEY="..."
 ```
 
-The app works with in-memory demo data when those variables are absent.
+The app works with in-memory demo data and fallback summary text when those variables are absent or blank. `.env.local` is ignored by Git.
+
+## Local Postgres
+
+Start Postgres with Docker:
+
+```bash
+docker compose up -d postgres
+```
+
+The container exposes Postgres on local port `5433` to avoid colliding with any existing Postgres server on `5432`. It initializes the feedback table from `db/init/001_feedback.sql` the first time the volume is created. To inspect the database from Docker:
+
+```bash
+docker compose exec postgres psql -U day_planner -d day_planner
+```
 
 ## Database Schema
 
