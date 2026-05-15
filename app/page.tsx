@@ -8,6 +8,7 @@ import {
   CloudSun,
   Coffee,
   DollarSign,
+  Clock3,
   MapPin,
   Send,
   Sparkles,
@@ -42,6 +43,8 @@ export default function Home() {
   const [context, setContext] = useState<DayContext>(initialContext);
   const [data, setData] = useState<PlannerResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [lastPlannedAt, setLastPlannedAt] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [feedbackState, setFeedbackState] = useState<Record<string, boolean>>({});
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -49,15 +52,29 @@ export default function Home() {
 
   async function loadRecommendations(nextContext = context, nextUserId = userId) {
     setLoading(true);
-    const response = await fetch("/api/recommend", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...nextContext, userId: nextUserId })
-    });
-    const payload = (await response.json()) as PlannerResponse;
-    setData(payload);
-    setContext(payload.context);
-    setLoading(false);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/recommend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...nextContext, userId: nextUserId })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Recommendation request failed with ${response.status}`);
+      }
+
+      const payload = (await response.json()) as PlannerResponse;
+      setData(payload);
+      setContext(payload.context);
+      setLastPlannedAt(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }));
+    } catch (requestError) {
+      console.error(requestError);
+      setError("Could not refresh recommendations. Check the dev server and database connection.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function submitFeedback(suggestion: ScoredSuggestion, liked: boolean) {
@@ -183,6 +200,10 @@ export default function Home() {
           <Send size={17} />
           {loading ? "Planning..." : "Plan my day"}
         </button>
+        <div className="statusLine" role="status">
+          <Clock3 size={15} />
+          {error || (lastPlannedAt ? `Last planned at ${lastPlannedAt}` : "Ready to plan")}
+        </div>
       </section>
 
       <section className="resultsPane" aria-live="polite">

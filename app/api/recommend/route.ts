@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { readFeedback } from "@/lib/db";
 import { summarizePlan } from "@/lib/gemini";
 import { rankSuggestions } from "@/lib/recommender";
-import { demoSuggestions } from "@/lib/sample-data";
+import { readSuggestions } from "@/lib/suggestions";
 import type { DayContext } from "@/lib/types";
 
 const defaultContext: DayContext = {
@@ -25,8 +25,8 @@ export async function POST(request: Request) {
     preferenceTags: Array.isArray(body.preferenceTags) ? body.preferenceTags : defaultContext.preferenceTags
   };
   const userId = body.userId?.trim() || "anonymous-user";
-  const feedback = await readFeedback(userId);
-  const suggestions = rankSuggestions(demoSuggestions, context, feedback);
+  const [feedback, availableSuggestions] = await Promise.all([readFeedback(userId), readSuggestions()]);
+  const suggestions = rankSuggestions(availableSuggestions, context, feedback);
   const summary = await summarizePlan(context, suggestions).catch(() => "");
 
   return NextResponse.json({

@@ -4,7 +4,7 @@ import type { FeedbackRecord } from "./types";
 let pool: Pool | null = null;
 const memoryFeedback: FeedbackRecord[] = [];
 
-function getPool() {
+export function getPool() {
   if (!process.env.DATABASE_URL) return null;
   pool ??= new Pool({ connectionString: process.env.DATABASE_URL });
   return pool;

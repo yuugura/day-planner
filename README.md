@@ -25,13 +25,18 @@ Start Postgres with Docker:
 docker compose up -d postgres
 ```
 
-The container exposes Postgres on local port `5433` to avoid colliding with any existing Postgres server on `5432`. It initializes the feedback table from `db/init/001_feedback.sql` the first time the volume is created. To inspect the database from Docker:
+The container exposes Postgres on local port `5433` to avoid colliding with any existing Postgres server on `5432`. It initializes the feedback and suggestions tables from `db/init` the first time the volume is created. To inspect the database from Docker:
 
 ```bash
 docker compose exec postgres psql -U day_planner -d day_planner
 ```
 
 ## Database Schema
+
+Core tables are initialized from:
+
+- `db/init/001_feedback.sql`
+- `db/init/002_suggestions.sql`
 
 ```sql
 create table if not exists feedback (
@@ -43,6 +48,14 @@ create table if not exists feedback (
   created_at timestamptz not null default now()
 );
 ```
+
+Suggestions are stored in Postgres and loaded by `lib/suggestions.ts`. If the database is unavailable or the table is empty, the app falls back to `lib/sample-data.ts`.
+
+## API Routes
+
+- `POST /api/recommend` ranks suggestions for the submitted day context.
+- `POST /api/feedback` records like/dislike feedback for personalization.
+- `GET /api/suggestions` lists active suggestions and reports whether they came from Postgres or fallback demo data.
 
 ## Recommender
 
