@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { describeWeatherCode } from "./weather";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { describeWeatherCode, searchCities } from "./weather";
 
 describe("describeWeatherCode", () => {
   it("maps clear, cloudy, rain, and snow weather codes", () => {
@@ -12,5 +12,52 @@ describe("describeWeatherCode", () => {
   it("lets temperature override the code for hot and cold recommender buckets", () => {
     expect(describeWeatherCode(0, 90)).toEqual({ condition: "hot", description: "Hot" });
     expect(describeWeatherCode(0, 22)).toEqual({ condition: "cold", description: "Cold" });
+  });
+});
+
+describe("searchCities", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("does not call the geocoding API for very short queries", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(searchCities("t")).resolves.toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("maps geocoding results into city suggestions", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          results: [
+            {
+              id: 6167865,
+              name: "Toronto",
+              admin1: "Ontario",
+              country: "Canada",
+              latitude: 43.70011,
+              longitude: -79.4163
+            }
+          ]
+        })
+      })
+    );
+
+    await expect(searchCities("Toronto")).resolves.toEqual([
+      {
+        id: "6167865",
+        name: "Toronto",
+        admin1: "Ontario",
+        country: "Canada",
+        latitude: 43.70011,
+        longitude: -79.4163,
+        displayName: "Toronto, Ontario, Canada"
+      }
+    ]);
   });
 });

@@ -1,7 +1,8 @@
-import type { WeatherCondition, WeatherReport } from "./types";
+import type { CitySearchResult, WeatherCondition, WeatherReport } from "./types";
 
 type GeocodingResponse = {
   results?: Array<{
+    id?: number;
     name: string;
     admin1?: string;
     country?: string;
@@ -17,6 +18,14 @@ type ForecastResponse = {
     weather_code: number;
     wind_speed_10m: number;
   };
+};
+
+type WeatherPlace = {
+  name: string;
+  admin1?: string;
+  country?: string;
+  latitude: number;
+  longitude: number;
 };
 
 export function describeWeatherCode(code: number, temperatureF: number): {
@@ -38,29 +47,55 @@ export function describeWeatherCode(code: number, temperatureF: number): {
   return { condition: "cloudy", description: "Mixed" };
 }
 
+export async function searchCities(query: string, count = 5): Promise<CitySearchResult[]> {
+  const trimmedQuery = query.trim();
+  if (trimmedQuery.length < 2) return [];
+
+  const geocodeUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
+  geocodeUrl.searchParams.set("name", trimmedQuery);
+  geocodeUrl.searchParams.set("count", String(count));
+  geocodeUrl.searchParams.set("language", "en");
+  geocodeUrl.searchParams.set("format", "json");
+
+  const geocodeResponse = await fetch(geocodeUrl, { next: { revalidate: 3600 } });
+  if (!geocodeResponse.ok) {
+    throw new Error(`Could not search cities for ${trimmedQuery}.`);
+  }
+
+  const geocoding = (await geocodeResponse.json()) as GeocodingResponse;
+  return (
+    geocoding.results?.map((place) => {
+      const displayParts = [place.name, place.admin1, place.country].filter(Boolean);
+
+      return {
+        id: String(place.id ?? `${place.latitude},${place.longitude}`),
+        name: place.name,
+        admin1: place.admin1,
+        country: place.country,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        displayName: displayParts.join(", ")
+      };
+    }) ?? []
+  );
+}
+
 export async function fetchWeatherForCity(city: string): Promise<WeatherReport> {
   const trimmedCity = city.trim();
   if (!trimmedCity) {
     throw new Error("City is required.");
   }
 
-  const geocodeUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
-  geocodeUrl.searchParams.set("name", trimmedCity);
-  geocodeUrl.searchParams.set("count", "1");
-  geocodeUrl.searchParams.set("language", "en");
-  geocodeUrl.searchParams.set("format", "json");
-
-  const geocodeResponse = await fetch(geocodeUrl, { next: { revalidate: 3600 } });
-  if (!geocodeResponse.ok) {
-    throw new Error(`Could not geocode ${trimmedCity}.`);
-  }
-
-  const geocoding = (await geocodeResponse.json()) as GeocodingResponse;
-  const place = geocoding.results?.[0];
+  const places = await searchCities(trimmedCity, 1);
+  const place = places[0];
   if (!place) {
     throw new Error(`No weather location found for ${trimmedCity}.`);
   }
 
+  return fetchWeatherForPlace(place);
+}
+
+export async function fetchWeatherForPlace(place: WeatherPlace): Promise<WeatherReport> {
   const forecastUrl = new URL("https://api.open-meteo.com/v1/forecast");
   forecastUrl.searchParams.set("latitude", String(place.latitude));
   forecastUrl.searchParams.set("longitude", String(place.longitude));
@@ -71,12 +106,12 @@ export async function fetchWeatherForCity(city: string): Promise<WeatherReport> 
 
   const forecastResponse = await fetch(forecastUrl, { next: { revalidate: 900 } });
   if (!forecastResponse.ok) {
-    throw new Error(`Could not fetch weather for ${trimmedCity}.`);
+    throw new Error(`Could not fetch weather for ${place.name}.`);
   }
 
   const forecast = (await forecastResponse.json()) as ForecastResponse;
   if (!forecast.current) {
-    throw new Error(`No current weather available for ${trimmedCity}.`);
+    throw new Error(`No current weather available for ${place.name}.`);
   }
 
   const weather = describeWeatherCode(forecast.current.weather_code, forecast.current.temperature_2m);

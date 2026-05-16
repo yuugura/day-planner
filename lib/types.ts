@@ -36,6 +36,16 @@ export type WeatherReport = {
   observedAt: string;
 };
 
+export type CitySearchResult = {
+  id: string;
+  name: string;
+  admin1?: string;
+  country?: string;
+  latitude: number;
+  longitude: number;
+  displayName: string;
+};
+
 export type Suggestion = {
   id: string;
   title: string;

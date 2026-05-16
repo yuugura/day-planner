@@ -18,7 +18,15 @@ import {
   Wind,
   Users
 } from "lucide-react";
-import type { CostLevel, DayContext, EnergyLevel, ScoredSuggestion, SocialSetting, WeatherReport } from "@/lib/types";
+import type {
+  CitySearchResult,
+  CostLevel,
+  DayContext,
+  EnergyLevel,
+  ScoredSuggestion,
+  SocialSetting,
+  WeatherReport
+} from "@/lib/types";
 
 type PlannerResponse = {
   context: DayContext;
@@ -54,19 +62,31 @@ export default function Home() {
   const [userId, setUserId] = useState<string | null>(null);
   const [weatherReport, setWeatherReport] = useState<WeatherReport | null>(null);
   const [temperatureUnit, setTemperatureUnit] = useState<TemperatureUnit>("fahrenheit");
+  const [citySuggestions, setCitySuggestions] = useState<CitySearchResult[]>([]);
+  const [selectedCity, setSelectedCity] = useState<CitySearchResult | null>(null);
+  const [citySearchLoading, setCitySearchLoading] = useState(false);
+  const [showCitySuggestions, setShowCitySuggestions] = useState(false);
 
   const topSuggestion = data?.suggestions[0];
+  const hasSelectedCity = selectedCity !== null && selectedCity.name === context.city;
   const displayedTemperature = formatTemperature(
     weatherReport ? weatherReport.temperatureF : context.temperatureF,
     temperatureUnit
   );
 
-  async function loadRecommendations(nextContext = context, nextUserId = userId) {
+  async function loadRecommendations(nextContext = context, nextUserId = userId, nextSelectedCity = selectedCity) {
+    if (!nextSelectedCity || nextSelectedCity.name !== nextContext.city) {
+      setError("Choose a city from the suggestions before planning.");
+      setShowCitySuggestions(true);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const weatherResponse = await fetch(`/api/weather?city=${encodeURIComponent(nextContext.city)}`);
+      const weatherUrl = buildWeatherUrl(nextContext.city, nextSelectedCity);
+      const weatherResponse = await fetch(weatherUrl);
       if (!weatherResponse.ok) {
         const payload = (await weatherResponse.json().catch(() => ({}))) as { error?: string };
         throw new Error(payload.error || "Weather request failed.");
@@ -114,16 +134,80 @@ export default function Home() {
   }
 
   useEffect(() => {
-    const existingUserId = window.localStorage.getItem(userStorageKey);
-    const nextUserId = existingUserId || window.crypto.randomUUID();
-    const savedTemperatureUnit = window.localStorage.getItem(temperatureUnitStorageKey);
-    window.localStorage.setItem(userStorageKey, nextUserId);
-    setUserId(nextUserId);
-    if (savedTemperatureUnit === "fahrenheit" || savedTemperatureUnit === "celsius") {
-      setTemperatureUnit(savedTemperatureUnit);
+    async function initializePlanner() {
+      const existingUserId = window.localStorage.getItem(userStorageKey);
+      const nextUserId = existingUserId || window.crypto.randomUUID();
+      const savedTemperatureUnit = window.localStorage.getItem(temperatureUnitStorageKey);
+      window.localStorage.setItem(userStorageKey, nextUserId);
+      setUserId(nextUserId);
+      if (savedTemperatureUnit === "fahrenheit" || savedTemperatureUnit === "celsius") {
+        setTemperatureUnit(savedTemperatureUnit);
+      }
+
+      try {
+        const response = await fetch(`/api/cities?query=${encodeURIComponent(initialContext.city)}`);
+        if (!response.ok) throw new Error("Could not initialize the default city.");
+
+        const payload = (await response.json()) as { cities: CitySearchResult[] };
+        const defaultCity = payload.cities[0];
+        if (!defaultCity) throw new Error("Could not find the default city.");
+
+        setSelectedCity(defaultCity);
+        setContext({ ...initialContext, city: defaultCity.name });
+        void loadRecommendations({ ...initialContext, city: defaultCity.name }, nextUserId, defaultCity);
+      } catch (initializationError) {
+        console.error(initializationError);
+        setError("Choose a city from the suggestions before planning.");
+      }
     }
-    void loadRecommendations(initialContext, nextUserId);
+
+    void initializePlanner();
   }, []);
+
+  useEffect(() => {
+    const query = context.city.trim();
+    if (query.length < 2) {
+      setCitySuggestions([]);
+      setCitySearchLoading(false);
+      return;
+    }
+
+    if (selectedCity && selectedCity.name === query) {
+      setCitySuggestions([]);
+      setCitySearchLoading(false);
+      return;
+    }
+
+    const abortController = new AbortController();
+    setCitySearchLoading(true);
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/cities?query=${encodeURIComponent(query)}`, {
+          signal: abortController.signal
+        });
+        if (!response.ok) throw new Error("City search failed.");
+
+        const payload = (await response.json()) as { cities: CitySearchResult[] };
+        setCitySuggestions(payload.cities);
+        setShowCitySuggestions(true);
+      } catch (searchError) {
+        if (!abortController.signal.aborted) {
+          console.error(searchError);
+          setCitySuggestions([]);
+        }
+      } finally {
+        if (!abortController.signal.aborted) {
+          setCitySearchLoading(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      abortController.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [context.city, selectedCity]);
 
   const categoryMix = useMemo(() => {
     const counts = new Map<string, number>();
@@ -144,16 +228,52 @@ export default function Home() {
           </div>
         </div>
 
-        <label className="field">
+        <div className="field cityField">
           <span>
             <MapPin size={16} /> City
           </span>
           <input
             value={context.city}
-            onChange={(event) => setContext({ ...context, city: event.target.value })}
+            onBlur={() => window.setTimeout(() => setShowCitySuggestions(false), 120)}
+            onChange={(event) => {
+              setSelectedCity(null);
+              setContext({ ...context, city: event.target.value });
+              setShowCitySuggestions(true);
+            }}
+            onFocus={() => setShowCitySuggestions(true)}
             placeholder="Toronto"
           />
-        </label>
+          <div className={hasSelectedCity ? "cityHint confirmed" : "cityHint"}>
+            {hasSelectedCity
+              ? `Selected: ${selectedCity.displayName}`
+              : context.city.trim().length > 0
+                ? "Choose a city from the suggestions."
+                : "Start typing a city."}
+          </div>
+          {showCitySuggestions && (citySuggestions.length > 0 || citySearchLoading) ? (
+            <div className="citySuggestions" role="listbox">
+              {citySearchLoading ? <div className="citySuggestionStatus">Searching cities...</div> : null}
+              {citySuggestions.map((city) => (
+                <button
+                  key={city.id}
+                  type="button"
+                  role="option"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    setSelectedCity(city);
+                    setContext({ ...context, city: city.name });
+                    setCitySuggestions([]);
+                    setShowCitySuggestions(false);
+                    setError(null);
+                  }}
+                >
+                  <strong>{city.name}</strong>
+                  <span>{city.displayName}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
 
         <div className="weatherPanel">
           <div className="weatherPanelTop">
@@ -253,7 +373,7 @@ export default function Home() {
           })}
         </div>
 
-        <button className="primaryButton" type="button" onClick={() => loadRecommendations()} disabled={loading}>
+        <button className="primaryButton" type="button" onClick={() => loadRecommendations()} disabled={loading || !hasSelectedCity}>
           <Send size={17} />
           {loading ? "Planning..." : "Plan my day"}
         </button>
@@ -378,4 +498,18 @@ function formatTemperature(temperatureF: number, unit: TemperatureUnit) {
 function updateTemperatureUnit(unit: TemperatureUnit, setTemperatureUnit: (unit: TemperatureUnit) => void) {
   setTemperatureUnit(unit);
   window.localStorage.setItem(temperatureUnitStorageKey, unit);
+}
+
+function buildWeatherUrl(city: string, selectedCity: CitySearchResult | null) {
+  const url = new URL("/api/weather", window.location.origin);
+  url.searchParams.set("city", city);
+
+  if (selectedCity && selectedCity.name === city) {
+    url.searchParams.set("latitude", String(selectedCity.latitude));
+    url.searchParams.set("longitude", String(selectedCity.longitude));
+    if (selectedCity.admin1) url.searchParams.set("admin1", selectedCity.admin1);
+    if (selectedCity.country) url.searchParams.set("country", selectedCity.country);
+  }
+
+  return url.toString();
 }
