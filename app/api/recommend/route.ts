@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     preferenceTags: Array.isArray(body.preferenceTags) ? body.preferenceTags : defaultContext.preferenceTags
   };
   const userId = body.userId?.trim() || "anonymous-user";
-  const [feedback, availableSuggestions] = await Promise.all([readFeedback(userId), readSuggestions()]);
+  const [feedback, availableSuggestions] = await Promise.all([readFeedback(userId), readSuggestions(userId)]);
   const suggestions = rankSuggestions(availableSuggestions, context, feedback);
   const summary = await summarizePlan(context, suggestions).catch(() => "");
 

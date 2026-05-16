@@ -25,7 +25,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -99,7 +100,8 @@ h1 {
 }
 
 input,
-select {
+select,
+textarea {
   background: white;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -107,6 +109,13 @@ select {
   min-height: 42px;
   padding: 0 12px;
   width: 100%;
+}
+
+textarea {
+  line-height: 1.4;
+  min-height: 86px;
+  padding: 10px 12px;
+  resize: vertical;
 }
 
 .citySuggestions {
@@ -279,6 +288,7 @@ select {
 }
 
 .primaryButton,
+.secondaryButton,
 .iconButton {
   align-items: center;
   border: 0;
@@ -295,7 +305,16 @@ select {
   min-height: 46px;
 }
 
-.primaryButton:disabled {
+.secondaryButton {
+  background: var(--teal);
+  border-radius: 8px;
+  color: white;
+  gap: 9px;
+  min-height: 42px;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
   cursor: wait;
   opacity: 0.7;
 }
@@ -314,6 +333,25 @@ select {
   flex-direction: column;
   gap: 18px;
   padding: 34px;
+}
+
+.suggestionBuilder {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 14px;
+  padding-top: 18px;
+}
+
+.sectionHeader {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.sectionHeader h2 {
+  font-size: 1.05rem;
+  line-height: 1.2;
 }
 
 .todayBar {
@@ -383,6 +421,41 @@ select {
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ownedSuggestions {
+  border-top: 1px solid rgba(100, 107, 97, 0.24);
+  display: grid;
+  gap: 12px;
+  padding-top: 20px;
+}
+
+.ownedSuggestionList {
+  display: grid;
+  gap: 10px;
+}
+
+.ownedSuggestion {
+  align-items: flex-start;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  padding: 14px;
+}
+
+.ownedSuggestion h3 {
+  font-size: 1rem;
+  line-height: 1.25;
+  margin-top: 3px;
+}
+
+.ownedSuggestion p,
+.emptyText {
+  color: #4d534a;
+  line-height: 1.45;
 }
 
 .suggestionCard {

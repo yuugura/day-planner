@@ -48,6 +48,7 @@ export type CitySearchResult = {
 
 export type Suggestion = {
   id: string;
+  ownerUserId?: string | null;
   title: string;
   category: SuggestionCategory;
   description: string;

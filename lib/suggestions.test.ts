@@ -69,7 +69,8 @@ describe("readSuggestionsWithSource", () => {
           social: "solo",
           weather_fit: ["rain", "snow"],
           tags: ["focus", "indoors"],
-          source: "productive"
+          source: "productive",
+          owner_user_id: "user-1"
         }
       ]
     });
@@ -82,6 +83,7 @@ describe("readSuggestionsWithSource", () => {
       suggestions: [
         {
           id: "library-work",
+          ownerUserId: "user-1",
           title: "Work from the library",
           category: "productive",
           description: "Do one focused work block from a quiet public library.",
@@ -97,7 +99,7 @@ describe("readSuggestionsWithSource", () => {
         }
       ]
     });
-    expect(query).toHaveBeenCalledWith(expect.stringContaining("from suggestions"));
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("from suggestions"), [null]);
   });
 });
 

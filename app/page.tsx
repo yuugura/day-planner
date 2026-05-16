@@ -9,13 +9,17 @@ import {
   Coffee,
   DollarSign,
   Clock3,
+  Edit3,
   MapPin,
+  Plus,
+  Save,
   Send,
   Sparkles,
   Thermometer,
   ThumbsDown,
   ThumbsUp,
   Wind,
+  X,
   Users
 } from "lucide-react";
 import type {
@@ -25,6 +29,8 @@ import type {
   EnergyLevel,
   ScoredSuggestion,
   SocialSetting,
+  Suggestion,
+  SuggestionCategory,
   WeatherReport
 } from "@/lib/types";
 
@@ -36,8 +42,24 @@ type PlannerResponse = {
 };
 
 type TemperatureUnit = "fahrenheit" | "celsius";
+type SuggestionForm = {
+  title: string;
+  category: SuggestionCategory;
+  description: string;
+  locationLabel: string;
+  cost: CostLevel;
+  distanceMiles: string;
+  durationHours: string;
+  energy: EnergyLevel;
+  social: SocialSetting;
+  weatherFit: string[];
+  tags: string;
+  source: Suggestion["source"];
+};
 
 const tagOptions = ["fresh-air", "food", "focus", "art", "movement", "connection", "creative", "low-planning"];
+const categoryOptions: SuggestionCategory[] = ["outdoors", "culture", "food", "fitness", "social", "productive", "creative", "rest"];
+const weatherOptions = ["clear", "cloudy", "rain", "snow", "hot", "cold"];
 const userStorageKey = "day-planner-user-id";
 const temperatureUnitStorageKey = "day-planner-temperature-unit";
 
@@ -50,6 +72,21 @@ const initialContext: DayContext = {
   energy: "medium",
   social: "flexible",
   preferenceTags: ["fresh-air", "food", "low-planning"]
+};
+
+const emptySuggestionForm: SuggestionForm = {
+  title: "",
+  category: "social",
+  description: "",
+  locationLabel: "",
+  cost: "low",
+  distanceMiles: "1",
+  durationHours: "1",
+  energy: "medium",
+  social: "flexible",
+  weatherFit: ["clear", "cloudy"],
+  tags: "low-planning",
+  source: "everyday"
 };
 
 export default function Home() {
@@ -66,9 +103,15 @@ export default function Home() {
   const [selectedCity, setSelectedCity] = useState<CitySearchResult | null>(null);
   const [citySearchLoading, setCitySearchLoading] = useState(false);
   const [showCitySuggestions, setShowCitySuggestions] = useState(false);
+  const [suggestionCatalog, setSuggestionCatalog] = useState<Suggestion[]>([]);
+  const [suggestionForm, setSuggestionForm] = useState<SuggestionForm>(emptySuggestionForm);
+  const [editingSuggestionId, setEditingSuggestionId] = useState<string | null>(null);
+  const [savingSuggestion, setSavingSuggestion] = useState(false);
+  const [suggestionMessage, setSuggestionMessage] = useState<string | null>(null);
 
   const topSuggestion = data?.suggestions[0];
   const hasSelectedCity = selectedCity !== null && selectedCity.name === context.city;
+  const ownedSuggestions = suggestionCatalog.filter((suggestion) => suggestion.ownerUserId === userId);
   const displayedTemperature = formatTemperature(
     weatherReport ? weatherReport.temperatureF : context.temperatureF,
     temperatureUnit
@@ -133,6 +176,79 @@ export default function Home() {
     await loadRecommendations();
   }
 
+  async function loadSuggestionCatalog(nextUserId = userId) {
+    if (!nextUserId) return;
+
+    try {
+      const response = await fetch(`/api/suggestions?userId=${encodeURIComponent(nextUserId)}`);
+      if (!response.ok) throw new Error("Could not load suggestions.");
+
+      const payload = (await response.json()) as { suggestions: Suggestion[] };
+      setSuggestionCatalog(payload.suggestions);
+    } catch (catalogError) {
+      console.error(catalogError);
+      setSuggestionMessage("Suggestions could not be loaded.");
+    }
+  }
+
+  async function saveSuggestion() {
+    if (!userId) return;
+
+    setSavingSuggestion(true);
+    setSuggestionMessage(null);
+
+    const body = {
+      ...suggestionForm,
+      id: editingSuggestionId,
+      userId,
+      distanceMiles: Number(suggestionForm.distanceMiles),
+      durationHours: Number(suggestionForm.durationHours),
+      tags: suggestionForm.tags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+    };
+
+    try {
+      const response = await fetch("/api/suggestions", {
+        method: editingSuggestionId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Could not save suggestion.");
+
+      setSuggestionForm(emptySuggestionForm);
+      setEditingSuggestionId(null);
+      setSuggestionMessage(editingSuggestionId ? "Suggestion updated." : "Suggestion created.");
+      await loadSuggestionCatalog(userId);
+      if (hasSelectedCity) await loadRecommendations(context, userId, selectedCity);
+    } catch (saveError) {
+      setSuggestionMessage(saveError instanceof Error ? saveError.message : "Could not save suggestion.");
+    } finally {
+      setSavingSuggestion(false);
+    }
+  }
+
+  function editSuggestion(suggestion: Suggestion) {
+    setEditingSuggestionId(suggestion.id);
+    setSuggestionForm({
+      title: suggestion.title,
+      category: suggestion.category,
+      description: suggestion.description,
+      locationLabel: suggestion.locationLabel,
+      cost: suggestion.cost,
+      distanceMiles: String(suggestion.distanceMiles),
+      durationHours: String(suggestion.durationHours),
+      energy: suggestion.energy,
+      social: suggestion.social,
+      weatherFit: suggestion.weatherFit,
+      tags: suggestion.tags.join(", "),
+      source: suggestion.source
+    });
+    setSuggestionMessage(null);
+  }
+
   useEffect(() => {
     async function initializePlanner() {
       const existingUserId = window.localStorage.getItem(userStorageKey);
@@ -140,6 +256,7 @@ export default function Home() {
       const savedTemperatureUnit = window.localStorage.getItem(temperatureUnitStorageKey);
       window.localStorage.setItem(userStorageKey, nextUserId);
       setUserId(nextUserId);
+      void loadSuggestionCatalog(nextUserId);
       if (savedTemperatureUnit === "fahrenheit" || savedTemperatureUnit === "celsius") {
         setTemperatureUnit(savedTemperatureUnit);
       }
@@ -381,6 +498,154 @@ export default function Home() {
           <Clock3 size={15} />
           {error || (lastPlannedAt ? `Last planned at ${lastPlannedAt}` : "Ready to plan")}
         </div>
+
+        <section className="suggestionBuilder" aria-label="Create or edit suggestion">
+          <div className="sectionHeader">
+            <div>
+              <span className="eyebrow">Your ideas</span>
+              <h2>{editingSuggestionId ? "Edit suggestion" : "New suggestion"}</h2>
+            </div>
+            {editingSuggestionId ? (
+              <button
+                aria-label="Cancel editing"
+                className="iconButton"
+                type="button"
+                onClick={() => {
+                  setEditingSuggestionId(null);
+                  setSuggestionForm(emptySuggestionForm);
+                  setSuggestionMessage(null);
+                }}
+              >
+                <X size={17} />
+              </button>
+            ) : null}
+          </div>
+
+          <label className="field">
+            <span>Title</span>
+            <input
+              value={suggestionForm.title}
+              onChange={(event) => setSuggestionForm({ ...suggestionForm, title: event.target.value })}
+              placeholder="Sunday market browse"
+            />
+          </label>
+          <label className="field">
+            <span>Description</span>
+            <textarea
+              value={suggestionForm.description}
+              onChange={(event) => setSuggestionForm({ ...suggestionForm, description: event.target.value })}
+              placeholder="A quick, low-pressure outing with a snack stop."
+            />
+          </label>
+          <label className="field">
+            <span>Location</span>
+            <input
+              value={suggestionForm.locationLabel}
+              onChange={(event) => setSuggestionForm({ ...suggestionForm, locationLabel: event.target.value })}
+              placeholder="Nearby market street"
+            />
+          </label>
+
+          <div className="grid2">
+            <SelectField
+              icon={null}
+              label="Category"
+              value={suggestionForm.category}
+              options={categoryOptions}
+              onChange={(category) => setSuggestionForm({ ...suggestionForm, category: category as SuggestionCategory })}
+            />
+            <SelectField
+              icon={null}
+              label="Cost"
+              value={suggestionForm.cost}
+              options={["free", "low", "medium", "high"]}
+              onChange={(cost) => setSuggestionForm({ ...suggestionForm, cost: cost as CostLevel })}
+            />
+          </div>
+
+          <div className="grid2">
+            <label className="field">
+              <span>Distance</span>
+              <input
+                min="0"
+                step="0.1"
+                type="number"
+                value={suggestionForm.distanceMiles}
+                onChange={(event) => setSuggestionForm({ ...suggestionForm, distanceMiles: event.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span>Hours</span>
+              <input
+                min="0.25"
+                step="0.25"
+                type="number"
+                value={suggestionForm.durationHours}
+                onChange={(event) => setSuggestionForm({ ...suggestionForm, durationHours: event.target.value })}
+              />
+            </label>
+          </div>
+
+          <div className="grid2">
+            <SelectField
+              icon={null}
+              label="Energy"
+              value={suggestionForm.energy}
+              options={["low", "medium", "high"]}
+              onChange={(energy) => setSuggestionForm({ ...suggestionForm, energy: energy as EnergyLevel })}
+            />
+            <SelectField
+              icon={null}
+              label="Social"
+              value={suggestionForm.social}
+              options={["solo", "pair", "group", "flexible"]}
+              onChange={(social) => setSuggestionForm({ ...suggestionForm, social: social as SocialSetting })}
+            />
+          </div>
+
+          <div className="field">
+            <span>Weather fit</span>
+            <div className="tags">
+              {weatherOptions.map((weather) => {
+                const selected = suggestionForm.weatherFit.includes(weather);
+                return (
+                  <button
+                    className={selected ? "tag selected" : "tag"}
+                    key={weather}
+                    type="button"
+                    onClick={() =>
+                      setSuggestionForm({
+                        ...suggestionForm,
+                        weatherFit: selected
+                          ? suggestionForm.weatherFit.filter((item) => item !== weather)
+                          : [...suggestionForm.weatherFit, weather]
+                      })
+                    }
+                  >
+                    {weather}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <label className="field">
+            <span>Tags</span>
+            <input
+              value={suggestionForm.tags}
+              onChange={(event) => setSuggestionForm({ ...suggestionForm, tags: event.target.value })}
+              placeholder="food, low-planning, fresh-air"
+            />
+          </label>
+
+          <button className="secondaryButton" type="button" onClick={saveSuggestion} disabled={savingSuggestion}>
+            {editingSuggestionId ? <Save size={17} /> : <Plus size={17} />}
+            {savingSuggestion ? "Saving..." : editingSuggestionId ? "Save changes" : "Add suggestion"}
+          </button>
+          <div className="statusLine" role="status">
+            {suggestionMessage || `${ownedSuggestions.length} personal suggestion${ownedSuggestions.length === 1 ? "" : "s"}`}
+          </div>
+        </section>
       </section>
 
       <section className="resultsPane" aria-live="polite">
@@ -446,6 +711,33 @@ export default function Home() {
             </article>
           ))}
         </div>
+
+        <section className="ownedSuggestions" aria-label="Your saved suggestions">
+          <div className="sectionHeader">
+            <div>
+              <span className="eyebrow">Saved by you</span>
+              <h2>{ownedSuggestions.length ? "Personal suggestions" : "No personal suggestions yet"}</h2>
+            </div>
+          </div>
+          {ownedSuggestions.length ? (
+            <div className="ownedSuggestionList">
+              {ownedSuggestions.map((suggestion) => (
+                <article className="ownedSuggestion" key={suggestion.id}>
+                  <div>
+                    <span className="source">{suggestion.category}</span>
+                    <h3>{suggestion.title}</h3>
+                    <p>{suggestion.description}</p>
+                  </div>
+                  <button className="iconButton" type="button" aria-label={`Edit ${suggestion.title}`} onClick={() => editSuggestion(suggestion)}>
+                    <Edit3 size={17} />
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="emptyText">Create one in the left panel and it will join your recommendation pool.</p>
+          )}
+        </section>
       </section>
     </main>
   );
