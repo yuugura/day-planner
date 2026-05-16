@@ -25,6 +25,12 @@ export type DayContext = {
   preferenceTags: string[];
 };
 
+export type PlaceLookup = {
+  city: string;
+  latitude: number;
+  longitude: number;
+};
+
 export type WeatherReport = {
   city: string;
   displayName: string;

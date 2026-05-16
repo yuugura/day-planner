@@ -78,7 +78,8 @@ h1 {
 .field span,
 .eyebrow,
 .metric span,
-.source {
+.source,
+.liveSource {
   color: var(--muted);
   font-size: 0.82rem;
 }
@@ -484,6 +485,24 @@ textarea {
 
 .source {
   text-transform: uppercase;
+}
+
+.sourceRow {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.liveSource {
+  background: #e4f0ee;
+  border: 1px solid #bfd6d2;
+  border-radius: 999px;
+  color: #165f60;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 5px 7px;
 }
 
 .suggestionCard h3 {

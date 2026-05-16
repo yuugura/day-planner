@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Bike,
   BriefcaseBusiness,
@@ -40,6 +40,7 @@ type PlannerResponse = {
   summary: string;
   suggestions: ScoredSuggestion[];
   trainingExamples: number;
+  livePlaceCount: number;
 };
 
 type TemperatureUnit = "fahrenheit" | "celsius";
@@ -149,7 +150,15 @@ export default function Home() {
       const response = await fetch("/api/recommend", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...weatherContext, userId: nextUserId })
+        body: JSON.stringify({
+          ...weatherContext,
+          userId: nextUserId,
+          place: {
+            city: nextSelectedCity.displayName,
+            latitude: nextSelectedCity.latitude,
+            longitude: nextSelectedCity.longitude
+          }
+        })
       });
 
       if (!response.ok) {
@@ -173,7 +182,7 @@ export default function Home() {
     await fetch("/api/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, suggestionId: suggestion.id, liked, context })
+      body: JSON.stringify({ userId, suggestionId: suggestion.id, liked, context, suggestion })
     });
     await loadRecommendations();
   }
@@ -357,12 +366,6 @@ export default function Home() {
       window.clearTimeout(timeoutId);
     };
   }, [context.city, selectedCity]);
-
-  const categoryMix = useMemo(() => {
-    const counts = new Map<string, number>();
-    data?.suggestions.slice(0, 5).forEach((item) => counts.set(item.category, (counts.get(item.category) ?? 0) + 1));
-    return [...counts.entries()];
-  }, [data]);
 
   return (
     <main className="shell">
@@ -697,7 +700,7 @@ export default function Home() {
         <div className="insightGrid">
           <Metric icon={<BriefcaseBusiness size={18} />} label="Training examples" value={String(data?.trainingExamples ?? 0)} />
           <Metric icon={<CloudSun size={18} />} label="Weather" value={context.weather} />
-          <Metric icon={<CalendarDays size={18} />} label="Top categories" value={categoryMix.map(([name]) => name).join(", ") || "mixed"} />
+          <Metric icon={<CalendarDays size={18} />} label="Live places" value={String(data?.livePlaceCount ?? 0)} />
         </div>
 
         <div className="suggestionList">
@@ -705,7 +708,10 @@ export default function Home() {
             <article className="suggestionCard" key={suggestion.id}>
               <div className="cardTop">
                 <div>
-                  <span className="source">{suggestion.source}</span>
+                  <div className="sourceRow">
+                    <span className="source">{suggestion.source}</span>
+                    {suggestion.id.startsWith("osm-") ? <span className="liveSource">Live city place</span> : null}
+                  </div>
                   <h3>{suggestion.title}</h3>
                 </div>
                 <span className="pill">{Math.round(suggestion.score * 100)}%</span>
