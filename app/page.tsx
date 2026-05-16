@@ -12,11 +12,13 @@ import {
   MapPin,
   Send,
   Sparkles,
+  Thermometer,
   ThumbsDown,
   ThumbsUp,
+  Wind,
   Users
 } from "lucide-react";
-import type { CostLevel, DayContext, EnergyLevel, ScoredSuggestion, SocialSetting, WeatherCondition } from "@/lib/types";
+import type { CostLevel, DayContext, EnergyLevel, ScoredSuggestion, SocialSetting, WeatherReport } from "@/lib/types";
 
 type PlannerResponse = {
   context: DayContext;
@@ -25,8 +27,11 @@ type PlannerResponse = {
   trainingExamples: number;
 };
 
+type TemperatureUnit = "fahrenheit" | "celsius";
+
 const tagOptions = ["fresh-air", "food", "focus", "art", "movement", "connection", "creative", "low-planning"];
 const userStorageKey = "day-planner-user-id";
+const temperatureUnitStorageKey = "day-planner-temperature-unit";
 
 const initialContext: DayContext = {
   city: "Toronto",
@@ -47,18 +52,39 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [feedbackState, setFeedbackState] = useState<Record<string, boolean>>({});
   const [userId, setUserId] = useState<string | null>(null);
+  const [weatherReport, setWeatherReport] = useState<WeatherReport | null>(null);
+  const [temperatureUnit, setTemperatureUnit] = useState<TemperatureUnit>("fahrenheit");
 
   const topSuggestion = data?.suggestions[0];
+  const displayedTemperature = formatTemperature(
+    weatherReport ? weatherReport.temperatureF : context.temperatureF,
+    temperatureUnit
+  );
 
   async function loadRecommendations(nextContext = context, nextUserId = userId) {
     setLoading(true);
     setError(null);
 
     try {
+      const weatherResponse = await fetch(`/api/weather?city=${encodeURIComponent(nextContext.city)}`);
+      if (!weatherResponse.ok) {
+        const payload = (await weatherResponse.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || "Weather request failed.");
+      }
+
+      const weatherPayload = (await weatherResponse.json()) as { weather: WeatherReport };
+      const weatherContext: DayContext = {
+        ...nextContext,
+        city: weatherPayload.weather.city,
+        weather: weatherPayload.weather.condition,
+        temperatureF: weatherPayload.weather.temperatureF
+      };
+      setWeatherReport(weatherPayload.weather);
+
       const response = await fetch("/api/recommend", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...nextContext, userId: nextUserId })
+        body: JSON.stringify({ ...weatherContext, userId: nextUserId })
       });
 
       if (!response.ok) {
@@ -71,7 +97,7 @@ export default function Home() {
       setLastPlannedAt(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }));
     } catch (requestError) {
       console.error(requestError);
-      setError("Could not refresh recommendations. Check the dev server and database connection.");
+      setError(requestError instanceof Error ? requestError.message : "Could not refresh recommendations.");
     } finally {
       setLoading(false);
     }
@@ -90,8 +116,12 @@ export default function Home() {
   useEffect(() => {
     const existingUserId = window.localStorage.getItem(userStorageKey);
     const nextUserId = existingUserId || window.crypto.randomUUID();
+    const savedTemperatureUnit = window.localStorage.getItem(temperatureUnitStorageKey);
     window.localStorage.setItem(userStorageKey, nextUserId);
     setUserId(nextUserId);
+    if (savedTemperatureUnit === "fahrenheit" || savedTemperatureUnit === "celsius") {
+      setTemperatureUnit(savedTemperatureUnit);
+    }
     void loadRecommendations(initialContext, nextUserId);
   }, []);
 
@@ -125,22 +155,49 @@ export default function Home() {
           />
         </label>
 
-        <div className="grid2">
-          <SelectField
-            icon={<CloudSun size={16} />}
-            label="Weather"
-            value={context.weather}
-            options={["clear", "cloudy", "rain", "snow", "hot", "cold"]}
-            onChange={(weather) => setContext({ ...context, weather: weather as WeatherCondition })}
-          />
-          <SelectField
-            icon={<DollarSign size={16} />}
-            label="Budget"
-            value={context.budget}
-            options={["free", "low", "medium", "high"]}
-            onChange={(budget) => setContext({ ...context, budget: budget as CostLevel })}
-          />
+        <div className="weatherPanel">
+          <div className="weatherPanelTop">
+            <span>
+              <CloudSun size={16} /> Weather
+            </span>
+            <div className="unitToggle" aria-label="Temperature unit">
+              <button
+                className={temperatureUnit === "fahrenheit" ? "active" : ""}
+                type="button"
+                onClick={() => updateTemperatureUnit("fahrenheit", setTemperatureUnit)}
+              >
+                F
+              </button>
+              <button
+                className={temperatureUnit === "celsius" ? "active" : ""}
+                type="button"
+                onClick={() => updateTemperatureUnit("celsius", setTemperatureUnit)}
+              >
+                C
+              </button>
+            </div>
+            <strong>{weatherReport ? weatherReport.description : context.weather}</strong>
+          </div>
+          <div className="weatherStats">
+            <span>
+              <Thermometer size={15} /> {displayedTemperature}
+            </span>
+            <span>
+              <Wind size={15} /> {weatherReport ? `${weatherReport.windMph} mph` : "Not fetched"}
+            </span>
+            <span>
+              <MapPin size={15} /> {weatherReport?.displayName || context.city}
+            </span>
+          </div>
         </div>
+
+        <SelectField
+          icon={<DollarSign size={16} />}
+          label="Budget"
+          value={context.budget}
+          options={["free", "low", "medium", "high"]}
+          onChange={(budget) => setContext({ ...context, budget: budget as CostLevel })}
+        />
 
         <div className="grid2">
           <SelectField
@@ -311,4 +368,14 @@ function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; 
       <strong>{value}</strong>
     </div>
   );
+}
+
+function formatTemperature(temperatureF: number, unit: TemperatureUnit) {
+  if (unit === "fahrenheit") return `${Math.round(temperatureF)} F`;
+  return `${Math.round(((temperatureF - 32) * 5) / 9)} C`;
+}
+
+function updateTemperatureUnit(unit: TemperatureUnit, setTemperatureUnit: (unit: TemperatureUnit) => void) {
+  setTemperatureUnit(unit);
+  window.localStorage.setItem(temperatureUnitStorageKey, unit);
 }

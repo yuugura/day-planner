@@ -25,6 +25,17 @@ export type DayContext = {
   preferenceTags: string[];
 };
 
+export type WeatherReport = {
+  city: string;
+  displayName: string;
+  condition: WeatherCondition;
+  description: string;
+  temperatureF: number;
+  windMph: number;
+  weatherCode: number;
+  observedAt: string;
+};
+
 export type Suggestion = {
   id: string;
   title: string;

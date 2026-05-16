@@ -111,6 +111,81 @@ select {
   grid-template-columns: 1fr 1fr;
 }
 
+.weatherPanel {
+  background: #e4f0ee;
+  border: 1px solid #bfd6d2;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.weatherPanelTop {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.weatherPanelTop span,
+.weatherStats span {
+  align-items: center;
+  color: #345d5b;
+  display: flex;
+  gap: 7px;
+}
+
+.weatherPanelTop span {
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.weatherPanelTop strong {
+  color: #165f60;
+  font-size: 1.05rem;
+  margin-left: auto;
+}
+
+.unitToggle {
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid #bfd6d2;
+  border-radius: 8px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 2px;
+}
+
+.unitToggle button {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: #345d5b;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 800;
+  height: 26px;
+  width: 30px;
+}
+
+.unitToggle button.active {
+  background: var(--teal);
+  color: white;
+}
+
+.weatherStats {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.weatherStats span {
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.weatherStats span:last-child {
+  grid-column: 1 / -1;
+}
+
 .tags,
 .reasonRow,
 .metaRow {

@@ -56,6 +56,7 @@ Suggestions are stored in Postgres and loaded by `lib/suggestions.ts`. If the da
 - `POST /api/recommend` ranks suggestions for the submitted day context.
 - `POST /api/feedback` records like/dislike feedback for personalization.
 - `GET /api/suggestions` lists active suggestions and reports whether they came from Postgres or fallback demo data.
+- `GET /api/weather?city=Toronto` fetches current city weather using Open-Meteo and maps it into the recommender's weather buckets.
 
 ## Recommender
 
