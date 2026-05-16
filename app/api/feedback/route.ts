@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { writeFeedback } from "@/lib/db";
 import { extractFeatures } from "@/lib/recommender";
-import { demoSuggestions } from "@/lib/sample-data";
+import { readSuggestions } from "@/lib/suggestions";
 import type { DayContext } from "@/lib/types";
 
 export async function POST(request: Request) {
@@ -12,13 +12,15 @@ export async function POST(request: Request) {
     context?: DayContext;
   };
 
-  const suggestion = demoSuggestions.find((item) => item.id === body.suggestionId);
+  const userId = body.userId?.trim() || "anonymous-user";
+  const suggestions = await readSuggestions(userId);
+  const suggestion = suggestions.find((item) => item.id === body.suggestionId);
   if (!suggestion || typeof body.liked !== "boolean" || !body.context) {
     return NextResponse.json({ error: "Missing suggestion, liked value, or context." }, { status: 400 });
   }
 
   await writeFeedback({
-    userId: body.userId?.trim() || "anonymous-user",
+    userId,
     suggestionId: suggestion.id,
     liked: body.liked,
     features: extractFeatures(suggestion, body.context)
