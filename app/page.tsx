@@ -18,6 +18,7 @@ import {
   Thermometer,
   ThumbsDown,
   ThumbsUp,
+  Trash2,
   Wind,
   X,
   Users
@@ -107,6 +108,7 @@ export default function Home() {
   const [suggestionForm, setSuggestionForm] = useState<SuggestionForm>(emptySuggestionForm);
   const [editingSuggestionId, setEditingSuggestionId] = useState<string | null>(null);
   const [savingSuggestion, setSavingSuggestion] = useState(false);
+  const [deletingSuggestionId, setDeletingSuggestionId] = useState<string | null>(null);
   const [suggestionMessage, setSuggestionMessage] = useState<string | null>(null);
 
   const topSuggestion = data?.suggestions[0];
@@ -247,6 +249,36 @@ export default function Home() {
       source: suggestion.source
     });
     setSuggestionMessage(null);
+  }
+
+  async function deleteSuggestion(suggestion: Suggestion) {
+    if (!userId || !window.confirm(`Delete "${suggestion.title}" from your suggestions?`)) return;
+
+    setDeletingSuggestionId(suggestion.id);
+    setSuggestionMessage(null);
+
+    try {
+      const response = await fetch("/api/suggestions", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: suggestion.id, userId })
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Could not delete suggestion.");
+
+      if (editingSuggestionId === suggestion.id) {
+        setEditingSuggestionId(null);
+        setSuggestionForm(emptySuggestionForm);
+      }
+
+      setSuggestionMessage("Suggestion deleted.");
+      await loadSuggestionCatalog(userId);
+      if (hasSelectedCity) await loadRecommendations(context, userId, selectedCity);
+    } catch (deleteError) {
+      setSuggestionMessage(deleteError instanceof Error ? deleteError.message : "Could not delete suggestion.");
+    } finally {
+      setDeletingSuggestionId(null);
+    }
   }
 
   useEffect(() => {
@@ -728,9 +760,20 @@ export default function Home() {
                     <h3>{suggestion.title}</h3>
                     <p>{suggestion.description}</p>
                   </div>
-                  <button className="iconButton" type="button" aria-label={`Edit ${suggestion.title}`} onClick={() => editSuggestion(suggestion)}>
-                    <Edit3 size={17} />
-                  </button>
+                  <div className="ownedSuggestionActions">
+                    <button className="iconButton" type="button" aria-label={`Edit ${suggestion.title}`} onClick={() => editSuggestion(suggestion)}>
+                      <Edit3 size={17} />
+                    </button>
+                    <button
+                      className="iconButton danger"
+                      type="button"
+                      aria-label={`Delete ${suggestion.title}`}
+                      onClick={() => deleteSuggestion(suggestion)}
+                      disabled={deletingSuggestionId === suggestion.id}
+                    >
+                      <Trash2 size={17} />
+                    </button>
+                  </div>
                 </article>
               ))}
             </div>

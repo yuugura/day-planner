@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { demoSuggestions } from "./sample-data";
-import { readSuggestions, readSuggestionsWithSource } from "./suggestions";
+import { archiveSuggestion, readSuggestions, readSuggestionsWithSource } from "./suggestions";
 import { getPool } from "./db";
 
 vi.mock("./db", () => ({
@@ -112,5 +112,35 @@ describe("readSuggestions", () => {
     mockedGetPool.mockReturnValue(null);
 
     await expect(readSuggestions()).resolves.toBe(demoSuggestions);
+  });
+});
+
+describe("archiveSuggestion", () => {
+  afterEach(() => {
+    mockedGetPool.mockReset();
+  });
+
+  it("soft deletes only an active suggestion owned by the current user", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rowCount: 1 });
+    mockedGetPool.mockReturnValue({ query } as never);
+
+    await expect(archiveSuggestion("custom-1", "user-1")).resolves.toBe(true);
+
+    expect(query).toHaveBeenLastCalledWith(expect.stringContaining("active = false"), ["custom-1", "user-1"]);
+  });
+
+  it("reports false when no owned active suggestion was archived", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rowCount: 0 });
+    mockedGetPool.mockReturnValue({ query } as never);
+
+    await expect(archiveSuggestion("seeded-1", "user-1")).resolves.toBe(false);
   });
 });

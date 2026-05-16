@@ -452,6 +452,12 @@ textarea {
   margin-top: 3px;
 }
 
+.ownedSuggestionActions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
 .ownedSuggestion p,
 .emptyText {
   color: #4d534a;
@@ -524,6 +530,16 @@ textarea {
 .iconButton.active {
   background: var(--gold);
   color: white;
+}
+
+.iconButton.danger {
+  background: #f7e7e8;
+  color: #9e3f48;
+}
+
+.iconButton:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 @media (max-width: 900px) {

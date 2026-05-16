@@ -303,3 +303,24 @@ export async function updateSuggestion(id: string, ownerUserId: string, input: S
 
   return result.rows[0] ? toSuggestion(result.rows[0]) : null;
 }
+
+export async function archiveSuggestion(id: string, ownerUserId: string): Promise<boolean> {
+  const db = getPool();
+  const normalizedOwner = normalizeUserId(ownerUserId);
+  if (!db || !normalizedOwner) {
+    throw new Error("A database connection and user id are required to delete suggestions.");
+  }
+
+  await ensureSuggestionSchema(db);
+  const result = await db.query(
+    `update suggestions set
+      active = false,
+      updated_at = now()
+    where id = $1
+      and owner_user_id = $2
+      and active = true`,
+    [id, normalizedOwner]
+  );
+
+  return (result.rowCount ?? 0) > 0;
+}
