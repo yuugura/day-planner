@@ -79,8 +79,8 @@ h1 {
 .eyebrow,
 .metric span,
 .source,
-.liveSource,
-.eventSource {
+.eventSource,
+.placeSource {
   color: var(--muted);
   font-size: 0.82rem;
 }
@@ -425,6 +425,86 @@ textarea {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.resultTabs {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+}
+
+.resultTabs button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 1 1 0;
+  font-weight: 800;
+  gap: 8px;
+  justify-content: center;
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.resultTabs button.active {
+  background: var(--ink);
+  color: white;
+}
+
+.resultTabs span {
+  background: rgba(100, 107, 97, 0.14);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  line-height: 1;
+  min-width: 24px;
+  padding: 5px 7px;
+}
+
+.resultTabs button.active span {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.liveDataList {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.liveDataCard {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  min-height: 230px;
+  padding: 18px;
+}
+
+.liveDataCard h3 {
+  font-size: 1.15rem;
+  line-height: 1.2;
+  margin-top: 4px;
+}
+
+.liveDataCard p {
+  color: #4d534a;
+  line-height: 1.45;
+}
+
+.liveDataEmpty {
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  padding: 18px;
+}
+
 .ownedSuggestions {
   border-top: 1px solid rgba(100, 107, 97, 0.24);
   display: grid;
@@ -495,22 +575,37 @@ textarea {
   gap: 8px;
 }
 
-.liveSource,
-.eventSource {
-  background: #e4f0ee;
-  border: 1px solid #bfd6d2;
+.eventSource,
+.placeSource {
+  background: #fff7df;
+  border: 1px solid #ecdca8;
   border-radius: 999px;
-  color: #165f60;
+  color: #7b5d12;
   font-size: 0.72rem;
   font-weight: 800;
   line-height: 1;
   padding: 5px 7px;
 }
 
-.eventSource {
-  background: #fff7df;
-  border-color: #ecdca8;
-  color: #7b5d12;
+.placeSource {
+  background: #e4f0ee;
+  border-color: #bfd6d2;
+  color: #165f60;
+}
+
+.eventLink {
+  align-items: center;
+  background: #e4f0ee;
+  border-radius: 8px;
+  color: #165f60;
+  display: inline-flex;
+  font-size: 0.82rem;
+  font-weight: 800;
+  justify-content: center;
+  margin-top: auto;
+  min-height: 38px;
+  padding: 10px 12px;
+  text-decoration: none;
 }
 
 .suggestionCard h3 {
@@ -580,7 +675,8 @@ textarea {
   }
 
   .insightGrid,
-  .suggestionList {
+  .suggestionList,
+  .liveDataList {
     grid-template-columns: 1fr;
   }
 }
@@ -601,5 +697,10 @@ textarea {
 
   .todayBar h2 {
     font-size: 2.35rem;
+  }
+
+  .resultTabs {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

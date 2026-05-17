@@ -39,12 +39,15 @@ type PlannerResponse = {
   context: DayContext;
   summary: string;
   suggestions: ScoredSuggestion[];
+  livePlaces: Suggestion[];
+  liveEvents: Suggestion[];
   trainingExamples: number;
   livePlaceCount: number;
   liveEventCount: number;
 };
 
 type TemperatureUnit = "fahrenheit" | "celsius";
+type ResultsTab = "recommendations" | "places" | "events";
 type SuggestionForm = {
   title: string;
   category: SuggestionCategory;
@@ -112,6 +115,7 @@ export default function Home() {
   const [savingSuggestion, setSavingSuggestion] = useState(false);
   const [deletingSuggestionId, setDeletingSuggestionId] = useState<string | null>(null);
   const [suggestionMessage, setSuggestionMessage] = useState<string | null>(null);
+  const [activeResultsTab, setActiveResultsTab] = useState<ResultsTab>("recommendations");
 
   const topSuggestion = data?.suggestions[0];
   const hasSelectedCity = selectedCity !== null && selectedCity.name === context.city;
@@ -704,53 +708,64 @@ export default function Home() {
           <Metric icon={<CalendarDays size={18} />} label="Live places" value={String(data?.livePlaceCount ?? 0)} />
         </div>
 
-        <div className="suggestionList">
-          {data?.suggestions.map((suggestion) => (
-            <article className="suggestionCard" key={suggestion.id}>
-              <div className="cardTop">
-                <div>
-                  <div className="sourceRow">
-                    <span className="source">{suggestion.source}</span>
-                    {suggestion.id.startsWith("osm-") ? <span className="liveSource">Live city place</span> : null}
-                    {suggestion.id.startsWith("ticketmaster-") ? <span className="eventSource">Live event</span> : null}
-                  </div>
-                  <h3>{suggestion.title}</h3>
-                </div>
-                <span className="pill">{Math.round(suggestion.score * 100)}%</span>
-              </div>
-              <p>{suggestion.description}</p>
-              <div className="metaRow">
-                <span>{suggestion.category}</span>
-                <span>{suggestion.cost}</span>
-                <span>{suggestion.distanceMiles.toFixed(1)} mi</span>
-                <span>{suggestion.durationHours}h</span>
-              </div>
-              <div className="reasonRow">
-                {suggestion.reasons.map((reason) => (
-                  <span key={reason}>{reason}</span>
-                ))}
-              </div>
-              <div className="feedbackRow">
-                <button
-                  aria-label={`Like ${suggestion.title}`}
-                  className={feedbackState[suggestion.id] === true ? "iconButton active" : "iconButton"}
-                  type="button"
-                  onClick={() => submitFeedback(suggestion, true)}
-                >
-                  <ThumbsUp size={17} />
-                </button>
-                <button
-                  aria-label={`Dislike ${suggestion.title}`}
-                  className={feedbackState[suggestion.id] === false ? "iconButton active" : "iconButton"}
-                  type="button"
-                  onClick={() => submitFeedback(suggestion, false)}
-                >
-                  <ThumbsDown size={17} />
-                </button>
-              </div>
-            </article>
-          ))}
+        <div className="resultTabs" role="tablist" aria-label="Planner result views">
+          <button
+            aria-selected={activeResultsTab === "recommendations"}
+            className={activeResultsTab === "recommendations" ? "active" : ""}
+            role="tab"
+            type="button"
+            onClick={() => setActiveResultsTab("recommendations")}
+          >
+            Picks <span>{data?.suggestions.length ?? 0}</span>
+          </button>
+          <button
+            aria-selected={activeResultsTab === "places"}
+            className={activeResultsTab === "places" ? "active" : ""}
+            role="tab"
+            type="button"
+            onClick={() => setActiveResultsTab("places")}
+          >
+            City places <span>{data?.livePlaceCount ?? 0}</span>
+          </button>
+          <button
+            aria-selected={activeResultsTab === "events"}
+            className={activeResultsTab === "events" ? "active" : ""}
+            role="tab"
+            type="button"
+            onClick={() => setActiveResultsTab("events")}
+          >
+            Events <span>{data?.liveEventCount ?? 0}</span>
+          </button>
         </div>
+
+        {activeResultsTab === "recommendations" ? (
+          <div className="suggestionList" role="tabpanel">
+            {data?.suggestions.map((suggestion) => (
+              <SuggestionCard
+                feedbackValue={feedbackState[suggestion.id]}
+                key={suggestion.id}
+                suggestion={suggestion}
+                onFeedback={submitFeedback}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {activeResultsTab === "places" ? (
+          <LiveSuggestionList
+            emptyText="Plan a city first and live places will appear here when OpenStreetMap has matches."
+            items={data?.livePlaces ?? []}
+            kind="place"
+          />
+        ) : null}
+
+        {activeResultsTab === "events" ? (
+          <LiveSuggestionList
+            emptyText="Ticketmaster did not return nearby events for this city and search window."
+            items={data?.liveEvents ?? []}
+            kind="event"
+          />
+        ) : null}
 
         <section className="ownedSuggestions" aria-label="Your saved suggestions">
           <div className="sectionHeader">
@@ -829,6 +844,116 @@ function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; 
       {icon}
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+function SuggestionCard({
+  suggestion,
+  feedbackValue,
+  onFeedback
+}: {
+  suggestion: ScoredSuggestion;
+  feedbackValue: boolean | undefined;
+  onFeedback: (suggestion: ScoredSuggestion, liked: boolean) => void;
+}) {
+  return (
+    <article className="suggestionCard">
+      <div className="cardTop">
+        <div>
+          <div className="sourceRow">
+            <span className="source">{suggestion.source}</span>
+            {suggestion.id.startsWith("ticketmaster-") ? <span className="eventSource">Live event</span> : null}
+          </div>
+          <h3>{suggestion.title}</h3>
+        </div>
+        <span className="pill">{Math.round(suggestion.score * 100)}%</span>
+      </div>
+      <p>{suggestion.description}</p>
+      <div className="metaRow">
+        <span>{suggestion.category}</span>
+        <span>{suggestion.cost}</span>
+        <span>{suggestion.distanceMiles.toFixed(1)} mi</span>
+        <span>{suggestion.durationHours}h</span>
+      </div>
+      <div className="reasonRow">
+        {suggestion.reasons.map((reason) => (
+          <span key={reason}>{reason}</span>
+        ))}
+      </div>
+      <div className="feedbackRow">
+        <button
+          aria-label={`Like ${suggestion.title}`}
+          className={feedbackValue === true ? "iconButton active" : "iconButton"}
+          type="button"
+          onClick={() => onFeedback(suggestion, true)}
+        >
+          <ThumbsUp size={17} />
+        </button>
+        <button
+          aria-label={`Dislike ${suggestion.title}`}
+          className={feedbackValue === false ? "iconButton active" : "iconButton"}
+          type="button"
+          onClick={() => onFeedback(suggestion, false)}
+        >
+          <ThumbsDown size={17} />
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function LiveSuggestionList({
+  items,
+  kind,
+  emptyText
+}: {
+  items: Suggestion[];
+  kind: "place" | "event";
+  emptyText: string;
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="liveDataEmpty" role="tabpanel">
+        {emptyText}
+      </div>
+    );
+  }
+
+  return (
+    <div className="liveDataList" role="tabpanel">
+      {items.map((item) => (
+        <article className="liveDataCard" key={item.id}>
+          <div className="cardTop">
+            <div>
+              <div className="sourceRow">
+                <span className="source">{item.category}</span>
+                <span className={kind === "event" ? "eventSource" : "placeSource"}>
+                  {kind === "event" ? "Live event" : "Live city place"}
+                </span>
+              </div>
+              <h3>{item.title}</h3>
+            </div>
+          </div>
+          <p>{item.description}</p>
+          <div className="metaRow">
+            <span>{item.cost}</span>
+            <span>{item.distanceMiles.toFixed(1)} mi</span>
+            <span>{item.durationHours}h</span>
+            <span>{item.locationLabel}</span>
+          </div>
+          <div className="reasonRow">
+            {item.tags.slice(0, 4).map((tag) => (
+              <span key={tag}>{tag}</span>
+            ))}
+          </div>
+          {item.externalUrl ? (
+            <a className="eventLink" href={item.externalUrl} target="_blank" rel="noreferrer">
+              View event
+            </a>
+          ) : null}
+        </article>
+      ))}
     </div>
   );
 }

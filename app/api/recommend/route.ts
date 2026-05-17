@@ -37,13 +37,15 @@ export async function POST(request: Request) {
     fetchPlaceSuggestionsSafe(placeLookup),
     fetchEventSuggestionsSafe(placeLookup)
   ]);
-  const suggestions = rankSuggestions([...eventSuggestions, ...placeSuggestions, ...availableSuggestions], context, feedback);
+  const suggestions = rankSuggestions(availableSuggestions, context, feedback);
   const summary = await summarizePlan(context, suggestions).catch(() => "");
 
   return NextResponse.json({
     context,
     summary,
     suggestions,
+    livePlaces: placeSuggestions,
+    liveEvents: eventSuggestions,
     trainingExamples: feedback.length,
     livePlaceCount: placeSuggestions.length,
     liveEventCount: eventSuggestions.length
