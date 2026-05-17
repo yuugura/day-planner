@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   Bike,
   ArrowLeft,
+  Brain,
   BriefcaseBusiness,
   CalendarDays,
   CloudSun,
@@ -50,12 +51,28 @@ type PlannerResponse = {
 };
 
 type TemperatureUnit = "fahrenheit" | "celsius";
-type ResultsTab = "recommendations" | "events";
+type ResultsTab = "recommendations" | "events" | "memory";
 type LocationMode = "area" | "current";
 type AuthMode = "signin" | "signup";
 type AuthUser = {
   id: string;
   email: string;
+};
+type FeedbackMemory = {
+  feedbackCount: number;
+  likesCount: number;
+  dislikesCount: number;
+  modelReady: boolean;
+  insights: string[];
+  recent: Array<{
+    id: string;
+    suggestionId: string;
+    title: string;
+    liked: boolean;
+    category?: SuggestionCategory;
+    source?: Suggestion["source"];
+    createdAt?: string;
+  }>;
 };
 type SuggestionForm = {
   title: string;
@@ -135,6 +152,7 @@ export default function Home() {
   const [savingSuggestion, setSavingSuggestion] = useState(false);
   const [deletingSuggestionId, setDeletingSuggestionId] = useState<string | null>(null);
   const [suggestionMessage, setSuggestionMessage] = useState<string | null>(null);
+  const [memory, setMemory] = useState<FeedbackMemory | null>(null);
   const [activeResultsTab, setActiveResultsTab] = useState<ResultsTab>("recommendations");
   const [selectedPickId, setSelectedPickId] = useState<string | null>(null);
 
@@ -217,6 +235,7 @@ export default function Home() {
       body: JSON.stringify({ userId, suggestionId: suggestion.id, liked, context, suggestion })
     });
     await loadRecommendations();
+    await loadMemory();
   }
 
   async function loadSuggestionCatalog(nextUserId = userId) {
@@ -231,6 +250,20 @@ export default function Home() {
     } catch (catalogError) {
       console.error(catalogError);
       setSuggestionMessage("Suggestions could not be loaded.");
+    }
+  }
+
+  async function loadMemory(nextUserId = userId) {
+    if (!nextUserId) return;
+
+    try {
+      const response = await fetch(`/api/memory?userId=${encodeURIComponent(nextUserId)}`);
+      if (!response.ok) throw new Error("Could not load memory.");
+
+      setMemory((await response.json()) as FeedbackMemory);
+    } catch (memoryError) {
+      console.error(memoryError);
+      setMemory(null);
     }
   }
 
@@ -419,6 +452,7 @@ export default function Home() {
       setAuthMessage(mode === "signup" ? `Account created for ${payload.user.email}.` : `Signed in as ${payload.user.email}.`);
       if (nextAnonymousUserId) await claimAnonymousData(nextAnonymousUserId, payload.user);
       await loadSuggestionCatalog(payload.user.id);
+      await loadMemory(payload.user.id);
       if (hasSelectedCity) await loadRecommendations(context, payload.user.id, selectedCity);
     } catch (authError) {
       setAuthMessage(authError instanceof Error ? authError.message : "Could not sign in.");
@@ -442,6 +476,7 @@ export default function Home() {
       setSuggestionMessage(null);
       setAuthMessage("Signed out. Anonymous mode is active.");
       await loadSuggestionCatalog(nextUserId);
+      await loadMemory(nextUserId);
       if (hasSelectedCity) await loadRecommendations(context, nextUserId, selectedCity);
     } finally {
       setAuthLoading(false);
@@ -469,6 +504,7 @@ export default function Home() {
 
       setUserId(activeUserId);
       void loadSuggestionCatalog(activeUserId);
+      void loadMemory(activeUserId);
       if (savedTemperatureUnit === "fahrenheit" || savedTemperatureUnit === "celsius") {
         setTemperatureUnit(savedTemperatureUnit);
       }
@@ -977,7 +1013,10 @@ export default function Home() {
             className={activeResultsTab === "recommendations" ? "active" : ""}
             role="tab"
             type="button"
-            onClick={() => setActiveResultsTab("recommendations")}
+            onClick={() => {
+              setSelectedPickId(null);
+              setActiveResultsTab("recommendations");
+            }}
           >
             Picks <span>{data?.suggestions.length ?? 0}</span>
           </button>
@@ -986,9 +1025,24 @@ export default function Home() {
             className={activeResultsTab === "events" ? "active" : ""}
             role="tab"
             type="button"
-            onClick={() => setActiveResultsTab("events")}
+            onClick={() => {
+              setSelectedPickId(null);
+              setActiveResultsTab("events");
+            }}
           >
             Events <span>{data?.liveEventCount ?? 0}</span>
+          </button>
+          <button
+            aria-selected={activeResultsTab === "memory"}
+            className={activeResultsTab === "memory" ? "active" : ""}
+            role="tab"
+            type="button"
+            onClick={() => {
+              setSelectedPickId(null);
+              setActiveResultsTab("memory");
+            }}
+          >
+            Memory <span>{memory?.feedbackCount ?? 0}</span>
           </button>
         </div>
 
@@ -1020,6 +1074,8 @@ export default function Home() {
             kind="event"
           />
         ) : null}
+
+        {activeResultsTab === "memory" ? <MemoryPanel memory={memory} /> : null}
 
         <section className="ownedSuggestions" aria-label="Your saved suggestions">
           <div className="sectionHeader">
@@ -1099,6 +1155,60 @@ function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; 
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  );
+}
+
+function MemoryPanel({ memory }: { memory: FeedbackMemory | null }) {
+  const insights = memory?.insights.length
+    ? memory.insights
+    : ["Like or dislike a few picks and this will start describing your preferences."];
+  const recent = memory?.recent ?? [];
+
+  return (
+    <section className="memoryPanel" aria-label="Preference memory">
+      <div className="memoryHeader">
+        <div>
+          <span className="eyebrow">
+            <Brain size={15} /> Preference memory
+          </span>
+          <h2>{memory?.feedbackCount ? "What the model is learning" : "No feedback history yet"}</h2>
+        </div>
+        <div className={memory?.modelReady ? "memoryBadge ready" : "memoryBadge"}>
+          {memory?.modelReady ? "Model active" : `${memory?.feedbackCount ?? 0}/4 signals`}
+        </div>
+      </div>
+
+      <div className="memoryStats" aria-label="Feedback totals">
+        <span>
+          <ThumbsUp size={15} /> {memory?.likesCount ?? 0}
+        </span>
+        <span>
+          <ThumbsDown size={15} /> {memory?.dislikesCount ?? 0}
+        </span>
+      </div>
+
+      <div className="memoryInsights">
+        {insights.map((insight) => (
+          <p key={insight}>{insight}</p>
+        ))}
+      </div>
+
+      {recent.length > 0 ? (
+        <div className="memoryHistory" aria-label="Recent feedback">
+          {recent.slice(0, 4).map((item) => (
+            <div className="memoryHistoryItem" key={item.id}>
+              <span className={item.liked ? "memoryVote liked" : "memoryVote disliked"}>
+                {item.liked ? <ThumbsUp size={14} /> : <ThumbsDown size={14} />}
+              </span>
+              <div>
+                <strong>{item.title}</strong>
+                <span>{[item.category, item.source].filter(Boolean).join(" / ") || "feedback"}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

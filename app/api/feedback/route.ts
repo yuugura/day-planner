@@ -27,7 +27,8 @@ export async function POST(request: Request) {
     userId,
     suggestionId: suggestion.id,
     liked: body.liked,
-    features: extractFeatures(suggestion, body.context)
+    features: extractFeatures(suggestion, body.context),
+    suggestion
   });
 
   return NextResponse.json({ ok: true });

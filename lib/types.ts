@@ -82,4 +82,6 @@ export type FeedbackRecord = {
   suggestionId: string;
   liked: boolean;
   features: Record<string, number>;
+  createdAt?: string;
+  suggestion?: Suggestion | null;
 };
