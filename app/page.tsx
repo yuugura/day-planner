@@ -49,6 +49,7 @@ type PlannerResponse = {
 
 type TemperatureUnit = "fahrenheit" | "celsius";
 type ResultsTab = "recommendations" | "events";
+type LocationMode = "area" | "current";
 type SuggestionForm = {
   title: string;
   category: SuggestionCategory;
@@ -110,11 +111,8 @@ export default function Home() {
   const [selectedCity, setSelectedCity] = useState<CitySearchResult | null>(null);
   const [citySearchLoading, setCitySearchLoading] = useState(false);
   const [showCitySuggestions, setShowCitySuggestions] = useState(false);
-  const [startingArea, setStartingArea] = useState("Toronto");
-  const [startingAreaSuggestions, setStartingAreaSuggestions] = useState<CitySearchResult[]>([]);
-  const [selectedStartingArea, setSelectedStartingArea] = useState<CitySearchResult | null>(null);
-  const [startingAreaSearchLoading, setStartingAreaSearchLoading] = useState(false);
-  const [showStartingAreaSuggestions, setShowStartingAreaSuggestions] = useState(false);
+  const [locationMode, setLocationMode] = useState<LocationMode>("area");
+  const [currentLocationArea, setCurrentLocationArea] = useState<CitySearchResult | null>(null);
   const [locationMessage, setLocationMessage] = useState<string | null>(null);
   const [requestingLocation, setRequestingLocation] = useState(false);
   const [suggestionCatalog, setSuggestionCatalog] = useState<Suggestion[]>([]);
@@ -139,7 +137,7 @@ export default function Home() {
     nextContext = context,
     nextUserId = userId,
     nextSelectedCity = selectedCity,
-    nextStartingArea = selectedStartingArea
+    nextStartingArea = getActiveReferenceArea()
   ) {
     if (!nextSelectedCity || nextSelectedCity.name !== nextContext.city) {
       setError("Choose a city from the suggestions before planning.");
@@ -310,9 +308,25 @@ export default function Home() {
     }
   }
 
-  function useBrowserLocation() {
+  function selectLocationMode(mode: LocationMode) {
+    setLocationMode(mode);
+    if (mode === "area") {
+      setLocationMessage("Nearby options use the selected city.");
+      return;
+    }
+
+    if (currentLocationArea) {
+      setLocationMessage("Nearby options use your current location.");
+      return;
+    }
+
+    requestBrowserLocation();
+  }
+
+  function requestBrowserLocation() {
     if (!navigator.geolocation) {
       setLocationMessage("Browser location is not available here.");
+      setLocationMode("area");
       return;
     }
 
@@ -327,10 +341,8 @@ export default function Home() {
           longitude: position.coords.longitude,
           displayName: "Current location"
         };
-        setSelectedStartingArea(locationArea);
-        setStartingArea("Current location");
-        setStartingAreaSuggestions([]);
-        setShowStartingAreaSuggestions(false);
+        setCurrentLocationArea(locationArea);
+        setLocationMode("current");
         setLocationMessage("Nearby options now use your current location.");
         setRequestingLocation(false);
       },
@@ -340,6 +352,7 @@ export default function Home() {
             ? "Location permission was denied. Using the selected city instead."
             : "Could not get your location. Using the selected city instead."
         );
+        setLocationMode("area");
         setRequestingLocation(false);
       },
       {
@@ -348,6 +361,10 @@ export default function Home() {
         timeout: 10000
       }
     );
+  }
+
+  function getActiveReferenceArea() {
+    return locationMode === "current" ? currentLocationArea : selectedCity;
   }
 
   useEffect(() => {
@@ -371,8 +388,6 @@ export default function Home() {
         if (!defaultCity) throw new Error("Could not find the default city.");
 
         setSelectedCity(defaultCity);
-        setStartingArea(defaultCity.displayName);
-        setSelectedStartingArea(defaultCity);
         setContext({ ...initialContext, city: defaultCity.name });
         void loadRecommendations({ ...initialContext, city: defaultCity.name }, nextUserId, defaultCity, defaultCity);
       } catch (initializationError) {
@@ -429,51 +444,6 @@ export default function Home() {
     };
   }, [context.city, selectedCity]);
 
-  useEffect(() => {
-    const query = startingArea.trim();
-    if (query.length < 2) {
-      setStartingAreaSuggestions([]);
-      setStartingAreaSearchLoading(false);
-      return;
-    }
-
-    if (selectedStartingArea && selectedStartingArea.displayName === query) {
-      setStartingAreaSuggestions([]);
-      setStartingAreaSearchLoading(false);
-      return;
-    }
-
-    const abortController = new AbortController();
-    setStartingAreaSearchLoading(true);
-
-    const timeoutId = window.setTimeout(async () => {
-      try {
-        const response = await fetch(`/api/cities?query=${encodeURIComponent(query)}`, {
-          signal: abortController.signal
-        });
-        if (!response.ok) throw new Error("Starting area search failed.");
-
-        const payload = (await response.json()) as { cities: CitySearchResult[] };
-        setStartingAreaSuggestions(payload.cities);
-        setShowStartingAreaSuggestions(true);
-      } catch (searchError) {
-        if (!abortController.signal.aborted) {
-          console.error(searchError);
-          setStartingAreaSuggestions([]);
-        }
-      } finally {
-        if (!abortController.signal.aborted) {
-          setStartingAreaSearchLoading(false);
-        }
-      }
-    }, 250);
-
-    return () => {
-      abortController.abort();
-      window.clearTimeout(timeoutId);
-    };
-  }, [startingArea, selectedStartingArea]);
-
   return (
     <main className="shell">
       <section className="controlPane" aria-label="Planner controls">
@@ -485,62 +455,6 @@ export default function Home() {
             <h1>Day Planner</h1>
             <p>Pick a day that fits the real you.</p>
           </div>
-        </div>
-
-        <div className="field cityField">
-          <span>
-            <MapPin size={16} /> Starting area
-          </span>
-          <input
-            value={startingArea}
-            onBlur={() => window.setTimeout(() => setShowStartingAreaSuggestions(false), 120)}
-            onChange={(event) => {
-              setSelectedStartingArea(null);
-              setStartingArea(event.target.value);
-              setShowStartingAreaSuggestions(true);
-            }}
-            onFocus={() => setShowStartingAreaSuggestions(true)}
-            placeholder="Toronto, Ontario, Canada"
-          />
-          <div className={selectedStartingArea ? "cityHint confirmed" : "cityHint"}>
-            {selectedStartingArea
-              ? `Nearby options use: ${selectedStartingArea.displayName}`
-              : startingArea.trim().length > 0
-                ? "Choose a starting area from the suggestions."
-                : "Defaults to the selected city."}
-          </div>
-          <button className="locationButton" type="button" onClick={useBrowserLocation} disabled={requestingLocation}>
-            <MapPin size={15} />
-            {requestingLocation ? "Requesting location..." : "Use my current location"}
-          </button>
-          {locationMessage ? (
-            <div className="locationMessage" role="status">
-              {locationMessage}
-            </div>
-          ) : null}
-          {showStartingAreaSuggestions && (startingAreaSuggestions.length > 0 || startingAreaSearchLoading) ? (
-            <div className="citySuggestions" role="listbox">
-              {startingAreaSearchLoading ? <div className="citySuggestionStatus">Searching areas...</div> : null}
-              {startingAreaSuggestions.map((area) => (
-                <button
-                  key={area.id}
-                  type="button"
-                  role="option"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => {
-                    setSelectedStartingArea(area);
-                    setStartingArea(area.displayName);
-                    setStartingAreaSuggestions([]);
-                    setShowStartingAreaSuggestions(false);
-                    setError(null);
-                  }}
-                >
-                  <strong>{area.name}</strong>
-                  <span>{area.displayName}</span>
-                </button>
-              ))}
-            </div>
-          ) : null}
         </div>
 
         <div className="field cityField">
@@ -576,9 +490,8 @@ export default function Home() {
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
                     setSelectedCity(city);
-                    setSelectedStartingArea(city);
+                    setLocationMode("area");
                     setContext({ ...context, city: city.name });
-                    setStartingArea(city.displayName);
                     setCitySuggestions([]);
                     setShowCitySuggestions(false);
                     setError(null);
@@ -588,6 +501,41 @@ export default function Home() {
                   <span>{city.displayName}</span>
                 </button>
               ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="nearbyReference">
+          <div className="nearbyReferenceHeader">
+            <span>
+              <MapPin size={16} /> Nearby options
+            </span>
+            <strong>
+              {locationMode === "current" && currentLocationArea
+                ? "Current location"
+                : selectedCity?.displayName || "Selected city"}
+            </strong>
+          </div>
+          <div className="locationModeToggle" aria-label="Nearby reference point">
+            <button
+              className={locationMode === "area" ? "active" : ""}
+              type="button"
+              onClick={() => selectLocationMode("area")}
+            >
+              Selected city
+            </button>
+            <button
+              className={locationMode === "current" ? "active" : ""}
+              type="button"
+              onClick={() => selectLocationMode("current")}
+              disabled={requestingLocation}
+            >
+              {requestingLocation ? "Requesting..." : "Current location"}
+            </button>
+          </div>
+          {locationMessage ? (
+            <div className="locationMessage" role="status">
+              {locationMessage}
             </div>
           ) : null}
         </div>
