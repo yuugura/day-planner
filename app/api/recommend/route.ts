@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolvePersonalizationUserId } from "@/lib/auth";
 import { readFeedback } from "@/lib/db";
 import { fetchEventSuggestionsSafe } from "@/lib/events";
 import { summarizePlan } from "@/lib/gemini";
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
     city: body.city?.trim() || defaultContext.city,
     preferenceTags: Array.isArray(body.preferenceTags) ? body.preferenceTags : defaultContext.preferenceTags
   };
-  const userId = body.userId?.trim() || "anonymous-user";
+  const userId = await resolvePersonalizationUserId(request, body.userId);
   const placeLookup = normalizePlaceLookup(body.place, context.city);
   const [feedback, availableSuggestions, placeSuggestions, eventSuggestions] = await Promise.all([
     readFeedback(userId),

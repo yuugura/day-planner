@@ -39,3 +39,25 @@ export async function writeFeedback(record: FeedbackRecord) {
     [record.userId, record.suggestionId, record.liked, record.features]
   );
 }
+
+export async function claimFeedbackUser(fromUserId: string, toUserId: string) {
+  const sourceUserId = fromUserId.trim();
+  const targetUserId = toUserId.trim();
+  if (!sourceUserId || !targetUserId || sourceUserId === targetUserId) return 0;
+
+  const db = getPool();
+  if (!db) {
+    let claimed = 0;
+    for (const record of memoryFeedback) {
+      if (record.userId === sourceUserId) {
+        record.userId = targetUserId;
+        claimed += 1;
+      }
+    }
+
+    return claimed;
+  }
+
+  const result = await db.query("update feedback set user_id = $2 where user_id = $1", [sourceUserId, targetUserId]);
+  return result.rowCount ?? 0;
+}

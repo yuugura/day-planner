@@ -11,6 +11,8 @@ import {
   DollarSign,
   Clock3,
   Edit3,
+  LogIn,
+  LogOut,
   MapPin,
   Plus,
   Save,
@@ -50,6 +52,11 @@ type PlannerResponse = {
 type TemperatureUnit = "fahrenheit" | "celsius";
 type ResultsTab = "recommendations" | "events";
 type LocationMode = "area" | "current";
+type AuthMode = "signin" | "signup";
+type AuthUser = {
+  id: string;
+  email: string;
+};
 type SuggestionForm = {
   title: string;
   category: SuggestionCategory;
@@ -105,6 +112,13 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [feedbackState, setFeedbackState] = useState<Record<string, boolean>>({});
   const [userId, setUserId] = useState<string | null>(null);
+  const [anonymousUserId, setAnonymousUserId] = useState<string | null>(null);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authMode, setAuthMode] = useState<AuthMode>("signin");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [weatherReport, setWeatherReport] = useState<WeatherReport | null>(null);
   const [temperatureUnit, setTemperatureUnit] = useState<TemperatureUnit>("fahrenheit");
   const [citySuggestions, setCitySuggestions] = useState<CitySearchResult[]>([]);
@@ -367,14 +381,94 @@ export default function Home() {
     return locationMode === "current" ? currentLocationArea : selectedCity;
   }
 
+  async function claimAnonymousData(nextAnonymousUserId: string, nextAuthUser: AuthUser) {
+    if (!nextAnonymousUserId || nextAnonymousUserId === nextAuthUser.id) return;
+
+    const response = await fetch("/api/auth/claim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ anonymousUserId: nextAnonymousUserId })
+    });
+    if (!response.ok) return;
+
+    const payload = (await response.json()) as { claimedSuggestions?: number; claimedFeedback?: number };
+    const claimedCount = (payload.claimedSuggestions ?? 0) + (payload.claimedFeedback ?? 0);
+    if (claimedCount > 0) {
+      setAuthMessage(`Signed in as ${nextAuthUser.email}. Claimed ${claimedCount} anonymous item${claimedCount === 1 ? "" : "s"}.`);
+    }
+  }
+
+  async function submitAuth(mode: AuthMode = authMode) {
+    const nextAnonymousUserId = anonymousUserId || userId;
+    setAuthLoading(true);
+    setAuthMessage(null);
+
+    try {
+      const response = await fetch(`/api/auth/${mode}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: authEmail, password: authPassword })
+      });
+      const payload = (await response.json().catch(() => ({}))) as { user?: AuthUser; error?: string };
+      if (!response.ok || !payload.user) throw new Error(payload.error || "Could not sign in.");
+
+      setAuthUser(payload.user);
+      setUserId(payload.user.id);
+      setAuthPassword("");
+      setSuggestionMessage(null);
+      setAuthMessage(mode === "signup" ? `Account created for ${payload.user.email}.` : `Signed in as ${payload.user.email}.`);
+      if (nextAnonymousUserId) await claimAnonymousData(nextAnonymousUserId, payload.user);
+      await loadSuggestionCatalog(payload.user.id);
+      if (hasSelectedCity) await loadRecommendations(context, payload.user.id, selectedCity);
+    } catch (authError) {
+      setAuthMessage(authError instanceof Error ? authError.message : "Could not sign in.");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function signOut() {
+    setAuthLoading(true);
+    setAuthMessage(null);
+
+    try {
+      await fetch("/api/auth/signout", { method: "POST" });
+      setAuthUser(null);
+      setAuthMode("signin");
+      const nextUserId = anonymousUserId || window.crypto.randomUUID();
+      window.localStorage.setItem(userStorageKey, nextUserId);
+      setAnonymousUserId(nextUserId);
+      setUserId(nextUserId);
+      setSuggestionMessage(null);
+      setAuthMessage("Signed out. Anonymous mode is active.");
+      await loadSuggestionCatalog(nextUserId);
+      if (hasSelectedCity) await loadRecommendations(context, nextUserId, selectedCity);
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
   useEffect(() => {
     async function initializePlanner() {
       const existingUserId = window.localStorage.getItem(userStorageKey);
       const nextUserId = existingUserId || window.crypto.randomUUID();
       const savedTemperatureUnit = window.localStorage.getItem(temperatureUnitStorageKey);
       window.localStorage.setItem(userStorageKey, nextUserId);
-      setUserId(nextUserId);
-      void loadSuggestionCatalog(nextUserId);
+      setAnonymousUserId(nextUserId);
+      let activeUserId = nextUserId;
+
+      const sessionResponse = await fetch("/api/auth/session");
+      if (sessionResponse.ok) {
+        const session = (await sessionResponse.json()) as { user: AuthUser | null };
+        if (session.user) {
+          setAuthUser(session.user);
+          activeUserId = session.user.id;
+          await claimAnonymousData(nextUserId, session.user);
+        }
+      }
+
+      setUserId(activeUserId);
+      void loadSuggestionCatalog(activeUserId);
       if (savedTemperatureUnit === "fahrenheit" || savedTemperatureUnit === "celsius") {
         setTemperatureUnit(savedTemperatureUnit);
       }
@@ -389,7 +483,7 @@ export default function Home() {
 
         setSelectedCity(defaultCity);
         setContext({ ...initialContext, city: defaultCity.name });
-        void loadRecommendations({ ...initialContext, city: defaultCity.name }, nextUserId, defaultCity, defaultCity);
+        void loadRecommendations({ ...initialContext, city: defaultCity.name }, activeUserId, defaultCity, defaultCity);
       } catch (initializationError) {
         console.error(initializationError);
         setError("Choose a city from the suggestions before planning.");
@@ -456,6 +550,67 @@ export default function Home() {
             <p>Pick a day that fits the real you.</p>
           </div>
         </div>
+
+        <section className="authPanel" aria-label="Account">
+          <div className="authPanelHeader">
+            <span>
+              <Users size={16} /> Account
+            </span>
+            <strong>{authUser ? authUser.email : "Anonymous mode"}</strong>
+          </div>
+          {authUser ? (
+            <button className="secondaryButton" type="button" onClick={signOut} disabled={authLoading}>
+              <LogOut size={17} />
+              Sign out
+            </button>
+          ) : (
+            <>
+              <div className="locationModeToggle" aria-label="Authentication mode">
+                <button
+                  className={authMode === "signin" ? "active" : ""}
+                  type="button"
+                  onClick={() => setAuthMode("signin")}
+                >
+                  Sign in
+                </button>
+                <button
+                  className={authMode === "signup" ? "active" : ""}
+                  type="button"
+                  onClick={() => setAuthMode("signup")}
+                >
+                  Create account
+                </button>
+              </div>
+              <label className="field">
+                <span>Email</span>
+                <input
+                  autoComplete="email"
+                  inputMode="email"
+                  value={authEmail}
+                  onChange={(event) => setAuthEmail(event.target.value)}
+                  placeholder="you@example.com"
+                />
+              </label>
+              <label className="field">
+                <span>Password</span>
+                <input
+                  autoComplete={authMode === "signin" ? "current-password" : "new-password"}
+                  type="password"
+                  value={authPassword}
+                  onChange={(event) => setAuthPassword(event.target.value)}
+                  placeholder="8+ characters"
+                />
+              </label>
+              <button className="secondaryButton" type="button" onClick={() => submitAuth()} disabled={authLoading}>
+                <LogIn size={17} />
+                {authLoading ? "Working..." : authMode === "signin" ? "Sign in" : "Create account"}
+              </button>
+            </>
+          )}
+          <div className="statusLine" role="status">
+            {authMessage || (authUser ? "Personalization now follows this account." : "Stay anonymous or sign in to sync later.")}
+          </div>
+        </section>
 
         <div className="field cityField">
           <span>

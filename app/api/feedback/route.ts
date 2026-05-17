@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolvePersonalizationUserId } from "@/lib/auth";
 import { writeFeedback } from "@/lib/db";
 import { extractFeatures } from "@/lib/recommender";
 import { readSuggestions } from "@/lib/suggestions";
@@ -13,7 +14,7 @@ export async function POST(request: Request) {
     suggestion?: Suggestion;
   };
 
-  const userId = body.userId?.trim() || "anonymous-user";
+  const userId = await resolvePersonalizationUserId(request, body.userId);
   const suggestions = await readSuggestions(userId);
   const suggestion =
     suggestions.find((item) => item.id === body.suggestionId) ??

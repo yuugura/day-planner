@@ -324,3 +324,21 @@ export async function archiveSuggestion(id: string, ownerUserId: string): Promis
 
   return (result.rowCount ?? 0) > 0;
 }
+
+export async function claimSuggestionsUser(fromUserId: string, toUserId: string) {
+  const db = getPool();
+  const sourceUserId = normalizeUserId(fromUserId);
+  const targetUserId = normalizeUserId(toUserId);
+  if (!db || !sourceUserId || !targetUserId || sourceUserId === targetUserId) return 0;
+
+  await ensureSuggestionSchema(db);
+  const result = await db.query(
+    `update suggestions set
+      owner_user_id = $2,
+      updated_at = now()
+    where owner_user_id = $1`,
+    [sourceUserId, targetUserId]
+  );
+
+  return result.rowCount ?? 0;
+}

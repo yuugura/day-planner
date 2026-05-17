@@ -17,6 +17,8 @@ GEMINI_API_KEY="..."
 
 The app works with in-memory demo data and fallback summary text when those variables are absent or blank. `.env.local` is ignored by Git.
 
+Account sign-up and sign-in are optional. Anonymous planning still works without Postgres, but real email/password accounts and cross-device personalization require `DATABASE_URL` because sessions, users, suggestions, and feedback are stored there.
+
 ## Local Postgres
 
 Start Postgres with Docker:
@@ -37,6 +39,7 @@ Core tables are initialized from:
 
 - `db/init/001_feedback.sql`
 - `db/init/002_suggestions.sql`
+- `db/init/004_auth.sql`
 
 ```sql
 create table if not exists feedback (
@@ -56,6 +59,9 @@ Suggestions are stored in Postgres and loaded by `lib/suggestions.ts`. If the da
 - `POST /api/recommend` ranks suggestions for the submitted day context.
 - `POST /api/feedback` records like/dislike feedback for personalization.
 - `GET /api/suggestions` lists active suggestions and reports whether they came from Postgres or fallback demo data.
+- `GET /api/auth/session` reads the current signed-in user, if any.
+- `POST /api/auth/signup`, `POST /api/auth/signin`, and `POST /api/auth/signout` manage optional account sessions.
+- `POST /api/auth/claim` migrates anonymous suggestions and feedback into the signed-in account.
 - `GET /api/cities?query=Tor` returns city autocomplete options from Open-Meteo geocoding.
 - `GET /api/weather?city=Toronto` fetches current city weather using Open-Meteo and maps it into the recommender's weather buckets.
 

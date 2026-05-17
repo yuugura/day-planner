@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolvePersonalizationUserId } from "@/lib/auth";
 import {
   archiveSuggestion,
   createSuggestion,
@@ -9,7 +10,7 @@ import {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const userId = searchParams.get("userId");
+  const userId = await resolvePersonalizationUserId(request, searchParams.get("userId"));
   const result = await readSuggestionsWithSource(userId);
 
   return NextResponse.json({
@@ -22,7 +23,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const userId = typeof body.userId === "string" ? body.userId : "";
+    const userId = await resolvePersonalizationUserId(request, typeof body.userId === "string" ? body.userId : "");
     const suggestion = await createSuggestion(userId, parseSuggestionInput(body));
 
     return NextResponse.json({ suggestion }, { status: 201 });
@@ -38,7 +39,7 @@ export async function PUT(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const id = typeof body.id === "string" ? body.id.trim() : "";
-    const userId = typeof body.userId === "string" ? body.userId : "";
+    const userId = await resolvePersonalizationUserId(request, typeof body.userId === "string" ? body.userId : "");
     if (!id) throw new Error("Suggestion id is required.");
 
     const suggestion = await updateSuggestion(id, userId, parseSuggestionInput(body));
@@ -59,7 +60,7 @@ export async function DELETE(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const id = typeof body.id === "string" ? body.id.trim() : "";
-    const userId = typeof body.userId === "string" ? body.userId : "";
+    const userId = await resolvePersonalizationUserId(request, typeof body.userId === "string" ? body.userId : "");
     if (!id) throw new Error("Suggestion id is required.");
 
     const deleted = await archiveSuggestion(id, userId);
