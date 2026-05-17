@@ -505,6 +505,34 @@ textarea {
   padding: 18px;
 }
 
+.pickDetail {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.pickDetailHeader {
+  align-items: flex-start;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.pickDetailHeader h2 {
+  font-size: clamp(1.6rem, 3vw, 2.6rem);
+  letter-spacing: 0;
+  line-height: 1.03;
+  margin-top: 4px;
+}
+
+.pickDetail p {
+  color: #4d534a;
+  line-height: 1.45;
+}
+
 .ownedSuggestions {
   border-top: 1px solid rgba(100, 107, 97, 0.24);
   display: grid;
@@ -606,6 +634,42 @@ textarea {
   min-height: 38px;
   padding: 10px 12px;
   text-decoration: none;
+}
+
+.backButton,
+.detailButton {
+  align-items: center;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 800;
+}
+
+.backButton {
+  background: #edf1e8;
+  color: #46623f;
+  gap: 8px;
+  justify-self: start;
+  min-height: 38px;
+  padding: 9px 12px;
+}
+
+.detailButton {
+  background: #e4f0ee;
+  color: #165f60;
+  gap: 9px;
+  justify-content: center;
+  min-height: 40px;
+  padding: 10px 12px;
+}
+
+.detailButton span {
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 5px 8px;
 }
 
 .suggestionCard h3 {

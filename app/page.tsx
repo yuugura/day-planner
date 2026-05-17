@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Bike,
+  ArrowLeft,
   BriefcaseBusiness,
   CalendarDays,
   CloudSun,
@@ -47,7 +48,7 @@ type PlannerResponse = {
 };
 
 type TemperatureUnit = "fahrenheit" | "celsius";
-type ResultsTab = "recommendations" | "places" | "events";
+type ResultsTab = "recommendations" | "events";
 type SuggestionForm = {
   title: string;
   category: SuggestionCategory;
@@ -116,8 +117,10 @@ export default function Home() {
   const [deletingSuggestionId, setDeletingSuggestionId] = useState<string | null>(null);
   const [suggestionMessage, setSuggestionMessage] = useState<string | null>(null);
   const [activeResultsTab, setActiveResultsTab] = useState<ResultsTab>("recommendations");
+  const [selectedPickId, setSelectedPickId] = useState<string | null>(null);
 
   const topSuggestion = data?.suggestions[0];
+  const selectedPick = data?.suggestions.find((suggestion) => suggestion.id === selectedPickId) ?? null;
   const hasSelectedCity = selectedCity !== null && selectedCity.name === context.city;
   const ownedSuggestions = suggestionCatalog.filter((suggestion) => suggestion.ownerUserId === userId);
   const displayedTemperature = formatTemperature(
@@ -719,15 +722,6 @@ export default function Home() {
             Picks <span>{data?.suggestions.length ?? 0}</span>
           </button>
           <button
-            aria-selected={activeResultsTab === "places"}
-            className={activeResultsTab === "places" ? "active" : ""}
-            role="tab"
-            type="button"
-            onClick={() => setActiveResultsTab("places")}
-          >
-            City places <span>{data?.livePlaceCount ?? 0}</span>
-          </button>
-          <button
             aria-selected={activeResultsTab === "events"}
             className={activeResultsTab === "events" ? "active" : ""}
             role="tab"
@@ -738,25 +732,25 @@ export default function Home() {
           </button>
         </div>
 
-        {activeResultsTab === "recommendations" ? (
+        {selectedPick ? (
+          <PickDetailView
+            pick={selectedPick}
+            places={getRelevantPlacesForPick(selectedPick, data?.livePlaces ?? [])}
+            onBack={() => setSelectedPickId(null)}
+          />
+        ) : activeResultsTab === "recommendations" ? (
           <div className="suggestionList" role="tabpanel">
             {data?.suggestions.map((suggestion) => (
               <SuggestionCard
                 feedbackValue={feedbackState[suggestion.id]}
                 key={suggestion.id}
+                relatedPlaceCount={getRelevantPlacesForPick(suggestion, data.livePlaces).length}
                 suggestion={suggestion}
                 onFeedback={submitFeedback}
+                onOpenPlaces={() => setSelectedPickId(suggestion.id)}
               />
             ))}
           </div>
-        ) : null}
-
-        {activeResultsTab === "places" ? (
-          <LiveSuggestionList
-            emptyText="Plan a city first and live places will appear here when OpenStreetMap has matches."
-            items={data?.livePlaces ?? []}
-            kind="place"
-          />
         ) : null}
 
         {activeResultsTab === "events" ? (
@@ -851,11 +845,15 @@ function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; 
 function SuggestionCard({
   suggestion,
   feedbackValue,
-  onFeedback
+  relatedPlaceCount,
+  onFeedback,
+  onOpenPlaces
 }: {
   suggestion: ScoredSuggestion;
   feedbackValue: boolean | undefined;
+  relatedPlaceCount: number;
   onFeedback: (suggestion: ScoredSuggestion, liked: boolean) => void;
+  onOpenPlaces: () => void;
 }) {
   return (
     <article className="suggestionCard">
@@ -881,6 +879,11 @@ function SuggestionCard({
           <span key={reason}>{reason}</span>
         ))}
       </div>
+      {relatedPlaceCount > 0 ? (
+        <button className="detailButton" type="button" onClick={onOpenPlaces}>
+          View nearby options <span>{relatedPlaceCount}</span>
+        </button>
+      ) : null}
       <div className="feedbackRow">
         <button
           aria-label={`Like ${suggestion.title}`}
@@ -900,6 +903,42 @@ function SuggestionCard({
         </button>
       </div>
     </article>
+  );
+}
+
+function PickDetailView({
+  pick,
+  places,
+  onBack
+}: {
+  pick: ScoredSuggestion;
+  places: Suggestion[];
+  onBack: () => void;
+}) {
+  return (
+    <section className="pickDetail" role="tabpanel">
+      <button className="backButton" type="button" onClick={onBack}>
+        <ArrowLeft size={16} />
+        Back to picks
+      </button>
+      <div className="pickDetailHeader">
+        <div>
+          <span className="eyebrow">Nearby options for</span>
+          <h2>{pick.title}</h2>
+        </div>
+        <span className="pill">{places.length}</span>
+      </div>
+      <p>{pick.description}</p>
+      {places.length > 0 ? (
+        <LiveSuggestionList
+          emptyText="No matching places found for this pick."
+          items={places}
+          kind="place"
+        />
+      ) : (
+        <div className="liveDataEmpty">No matching places found for this pick.</div>
+      )}
+    </section>
   );
 }
 
@@ -956,6 +995,27 @@ function LiveSuggestionList({
       ))}
     </div>
   );
+}
+
+function getRelevantPlacesForPick(pick: Suggestion, places: Suggestion[]) {
+  return places
+    .filter((place) => {
+      if (pick.category === "food") return place.category === "food";
+      if (pick.category === "outdoors") return place.category === "outdoors";
+      if (pick.category === "culture") return place.category === "culture";
+      if (pick.category === "productive") {
+        return place.category === "productive" || place.tags.includes("focus");
+      }
+      if (pick.category === "fitness") return place.category === "fitness";
+      if (pick.category === "social") {
+        return place.category === "social" || place.category === "food" || place.tags.includes("connection");
+      }
+
+      const sharedTags = place.tags.filter((tag) => pick.tags.includes(tag));
+      return sharedTags.length >= 2;
+    })
+    .sort((a, b) => a.distanceMiles - b.distanceMiles)
+    .slice(0, 12);
 }
 
 function formatTemperature(temperatureF: number, unit: TemperatureUnit) {

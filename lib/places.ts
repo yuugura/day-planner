@@ -45,9 +45,9 @@ const overpassQuery = `
   node(around:6000,{{lat}},{{lon}})["leisure"~"^(park|garden|nature_reserve|sports_centre|fitness_centre)$"];
   way(around:6000,{{lat}},{{lon}})["leisure"~"^(park|garden|nature_reserve|sports_centre|fitness_centre)$"];
   relation(around:6000,{{lat}},{{lon}})["leisure"~"^(park|garden|nature_reserve|sports_centre|fitness_centre)$"];
-  node(around:6000,{{lat}},{{lon}})["amenity"~"^(cafe|library|community_centre|marketplace|arts_centre|theatre|cinema)$"];
-  way(around:6000,{{lat}},{{lon}})["amenity"~"^(cafe|library|community_centre|marketplace|arts_centre|theatre|cinema)$"];
-  relation(around:6000,{{lat}},{{lon}})["amenity"~"^(cafe|library|community_centre|marketplace|arts_centre|theatre|cinema)$"];
+  node(around:6000,{{lat}},{{lon}})["amenity"~"^(cafe|restaurant|fast_food|food_court|pub|bar|library|community_centre|marketplace|arts_centre|theatre|cinema)$"];
+  way(around:6000,{{lat}},{{lon}})["amenity"~"^(cafe|restaurant|fast_food|food_court|pub|bar|library|community_centre|marketplace|arts_centre|theatre|cinema)$"];
+  relation(around:6000,{{lat}},{{lon}})["amenity"~"^(cafe|restaurant|fast_food|food_court|pub|bar|library|community_centre|marketplace|arts_centre|theatre|cinema)$"];
   node(around:6000,{{lat}},{{lon}})["tourism"~"^(museum|gallery|attraction|viewpoint)$"];
   way(around:6000,{{lat}},{{lon}})["tourism"~"^(museum|gallery|attraction|viewpoint)$"];
   relation(around:6000,{{lat}},{{lon}})["tourism"~"^(museum|gallery|attraction|viewpoint)$"];
@@ -185,10 +185,10 @@ function classifyPlace(tags: Record<string, string>): PlaceTemplate | null {
     };
   }
 
-  if (amenity === "cafe" || amenity === "marketplace") {
+  if (["cafe", "restaurant", "fast_food", "food_court", "pub", "bar", "marketplace"].includes(amenity)) {
     return {
       category: "food",
-      cost: amenity === "marketplace" ? "low" : "medium",
+      cost: ["marketplace", "fast_food", "food_court"].includes(amenity) ? "low" : "medium",
       durationHours: amenity === "marketplace" ? 1.25 : 1,
       energy: "low",
       social: "flexible",
