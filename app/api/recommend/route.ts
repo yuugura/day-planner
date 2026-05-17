@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { readFeedback } from "@/lib/db";
+import { fetchEventSuggestionsSafe } from "@/lib/events";
 import { summarizePlan } from "@/lib/gemini";
 import { fetchPlaceSuggestionsSafe } from "@/lib/places";
 import { rankSuggestions } from "@/lib/recommender";
@@ -30,12 +31,13 @@ export async function POST(request: Request) {
   };
   const userId = body.userId?.trim() || "anonymous-user";
   const placeLookup = normalizePlaceLookup(body.place, context.city);
-  const [feedback, availableSuggestions, placeSuggestions] = await Promise.all([
+  const [feedback, availableSuggestions, placeSuggestions, eventSuggestions] = await Promise.all([
     readFeedback(userId),
     readSuggestions(userId),
-    fetchPlaceSuggestionsSafe(placeLookup)
+    fetchPlaceSuggestionsSafe(placeLookup),
+    fetchEventSuggestionsSafe(placeLookup)
   ]);
-  const suggestions = rankSuggestions([...placeSuggestions, ...availableSuggestions], context, feedback);
+  const suggestions = rankSuggestions([...eventSuggestions, ...placeSuggestions, ...availableSuggestions], context, feedback);
   const summary = await summarizePlan(context, suggestions).catch(() => "");
 
   return NextResponse.json({
@@ -43,7 +45,8 @@ export async function POST(request: Request) {
     summary,
     suggestions,
     trainingExamples: feedback.length,
-    livePlaceCount: placeSuggestions.length
+    livePlaceCount: placeSuggestions.length,
+    liveEventCount: eventSuggestions.length
   });
 }
 

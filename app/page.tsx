@@ -41,6 +41,7 @@ type PlannerResponse = {
   suggestions: ScoredSuggestion[];
   trainingExamples: number;
   livePlaceCount: number;
+  liveEventCount: number;
 };
 
 type TemperatureUnit = "fahrenheit" | "celsius";
@@ -699,7 +700,7 @@ export default function Home() {
 
         <div className="insightGrid">
           <Metric icon={<BriefcaseBusiness size={18} />} label="Training examples" value={String(data?.trainingExamples ?? 0)} />
-          <Metric icon={<CloudSun size={18} />} label="Weather" value={context.weather} />
+          <Metric icon={<CloudSun size={18} />} label="Live events" value={String(data?.liveEventCount ?? 0)} />
           <Metric icon={<CalendarDays size={18} />} label="Live places" value={String(data?.livePlaceCount ?? 0)} />
         </div>
 
@@ -711,6 +712,7 @@ export default function Home() {
                   <div className="sourceRow">
                     <span className="source">{suggestion.source}</span>
                     {suggestion.id.startsWith("osm-") ? <span className="liveSource">Live city place</span> : null}
+                    {suggestion.id.startsWith("ticketmaster-") ? <span className="eventSource">Live event</span> : null}
                   </div>
                   <h3>{suggestion.title}</h3>
                 </div>

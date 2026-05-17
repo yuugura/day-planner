@@ -67,6 +67,7 @@ export type Suggestion = {
   weatherFit: WeatherCondition[];
   tags: string[];
   source: "event" | "city" | "everyday" | "productive";
+  externalUrl?: string;
 };
 
 export type ScoredSuggestion = Suggestion & {

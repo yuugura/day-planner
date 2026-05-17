@@ -79,7 +79,8 @@ h1 {
 .eyebrow,
 .metric span,
 .source,
-.liveSource {
+.liveSource,
+.eventSource {
   color: var(--muted);
   font-size: 0.82rem;
 }
@@ -494,7 +495,8 @@ textarea {
   gap: 8px;
 }
 
-.liveSource {
+.liveSource,
+.eventSource {
   background: #e4f0ee;
   border: 1px solid #bfd6d2;
   border-radius: 999px;
@@ -503,6 +505,12 @@ textarea {
   font-weight: 800;
   line-height: 1;
   padding: 5px 7px;
+}
+
+.eventSource {
+  background: #fff7df;
+  border-color: #ecdca8;
+  color: #7b5d12;
 }
 
 .suggestionCard h3 {
