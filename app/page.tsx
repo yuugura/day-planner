@@ -110,6 +110,13 @@ export default function Home() {
   const [selectedCity, setSelectedCity] = useState<CitySearchResult | null>(null);
   const [citySearchLoading, setCitySearchLoading] = useState(false);
   const [showCitySuggestions, setShowCitySuggestions] = useState(false);
+  const [startingArea, setStartingArea] = useState("Toronto");
+  const [startingAreaSuggestions, setStartingAreaSuggestions] = useState<CitySearchResult[]>([]);
+  const [selectedStartingArea, setSelectedStartingArea] = useState<CitySearchResult | null>(null);
+  const [startingAreaSearchLoading, setStartingAreaSearchLoading] = useState(false);
+  const [showStartingAreaSuggestions, setShowStartingAreaSuggestions] = useState(false);
+  const [locationMessage, setLocationMessage] = useState<string | null>(null);
+  const [requestingLocation, setRequestingLocation] = useState(false);
   const [suggestionCatalog, setSuggestionCatalog] = useState<Suggestion[]>([]);
   const [suggestionForm, setSuggestionForm] = useState<SuggestionForm>(emptySuggestionForm);
   const [editingSuggestionId, setEditingSuggestionId] = useState<string | null>(null);
@@ -128,7 +135,12 @@ export default function Home() {
     temperatureUnit
   );
 
-  async function loadRecommendations(nextContext = context, nextUserId = userId, nextSelectedCity = selectedCity) {
+  async function loadRecommendations(
+    nextContext = context,
+    nextUserId = userId,
+    nextSelectedCity = selectedCity,
+    nextStartingArea = selectedStartingArea
+  ) {
     if (!nextSelectedCity || nextSelectedCity.name !== nextContext.city) {
       setError("Choose a city from the suggestions before planning.");
       setShowCitySuggestions(true);
@@ -162,9 +174,9 @@ export default function Home() {
           ...weatherContext,
           userId: nextUserId,
           place: {
-            city: nextSelectedCity.displayName,
-            latitude: nextSelectedCity.latitude,
-            longitude: nextSelectedCity.longitude
+            city: nextStartingArea?.displayName || nextSelectedCity.displayName,
+            latitude: nextStartingArea?.latitude ?? nextSelectedCity.latitude,
+            longitude: nextStartingArea?.longitude ?? nextSelectedCity.longitude
           }
         })
       });
@@ -298,6 +310,46 @@ export default function Home() {
     }
   }
 
+  function useBrowserLocation() {
+    if (!navigator.geolocation) {
+      setLocationMessage("Browser location is not available here.");
+      return;
+    }
+
+    setRequestingLocation(true);
+    setLocationMessage("Waiting for location permission...");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const locationArea: CitySearchResult = {
+          id: `browser-${position.coords.latitude},${position.coords.longitude}`,
+          name: "Current location",
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          displayName: "Current location"
+        };
+        setSelectedStartingArea(locationArea);
+        setStartingArea("Current location");
+        setStartingAreaSuggestions([]);
+        setShowStartingAreaSuggestions(false);
+        setLocationMessage("Nearby options now use your current location.");
+        setRequestingLocation(false);
+      },
+      (locationError) => {
+        setLocationMessage(
+          locationError.code === locationError.PERMISSION_DENIED
+            ? "Location permission was denied. Using the selected city instead."
+            : "Could not get your location. Using the selected city instead."
+        );
+        setRequestingLocation(false);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 300000,
+        timeout: 10000
+      }
+    );
+  }
+
   useEffect(() => {
     async function initializePlanner() {
       const existingUserId = window.localStorage.getItem(userStorageKey);
@@ -319,8 +371,10 @@ export default function Home() {
         if (!defaultCity) throw new Error("Could not find the default city.");
 
         setSelectedCity(defaultCity);
+        setStartingArea(defaultCity.displayName);
+        setSelectedStartingArea(defaultCity);
         setContext({ ...initialContext, city: defaultCity.name });
-        void loadRecommendations({ ...initialContext, city: defaultCity.name }, nextUserId, defaultCity);
+        void loadRecommendations({ ...initialContext, city: defaultCity.name }, nextUserId, defaultCity, defaultCity);
       } catch (initializationError) {
         console.error(initializationError);
         setError("Choose a city from the suggestions before planning.");
@@ -375,6 +429,51 @@ export default function Home() {
     };
   }, [context.city, selectedCity]);
 
+  useEffect(() => {
+    const query = startingArea.trim();
+    if (query.length < 2) {
+      setStartingAreaSuggestions([]);
+      setStartingAreaSearchLoading(false);
+      return;
+    }
+
+    if (selectedStartingArea && selectedStartingArea.displayName === query) {
+      setStartingAreaSuggestions([]);
+      setStartingAreaSearchLoading(false);
+      return;
+    }
+
+    const abortController = new AbortController();
+    setStartingAreaSearchLoading(true);
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/cities?query=${encodeURIComponent(query)}`, {
+          signal: abortController.signal
+        });
+        if (!response.ok) throw new Error("Starting area search failed.");
+
+        const payload = (await response.json()) as { cities: CitySearchResult[] };
+        setStartingAreaSuggestions(payload.cities);
+        setShowStartingAreaSuggestions(true);
+      } catch (searchError) {
+        if (!abortController.signal.aborted) {
+          console.error(searchError);
+          setStartingAreaSuggestions([]);
+        }
+      } finally {
+        if (!abortController.signal.aborted) {
+          setStartingAreaSearchLoading(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      abortController.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [startingArea, selectedStartingArea]);
+
   return (
     <main className="shell">
       <section className="controlPane" aria-label="Planner controls">
@@ -386,6 +485,62 @@ export default function Home() {
             <h1>Day Planner</h1>
             <p>Pick a day that fits the real you.</p>
           </div>
+        </div>
+
+        <div className="field cityField">
+          <span>
+            <MapPin size={16} /> Starting area
+          </span>
+          <input
+            value={startingArea}
+            onBlur={() => window.setTimeout(() => setShowStartingAreaSuggestions(false), 120)}
+            onChange={(event) => {
+              setSelectedStartingArea(null);
+              setStartingArea(event.target.value);
+              setShowStartingAreaSuggestions(true);
+            }}
+            onFocus={() => setShowStartingAreaSuggestions(true)}
+            placeholder="Toronto, Ontario, Canada"
+          />
+          <div className={selectedStartingArea ? "cityHint confirmed" : "cityHint"}>
+            {selectedStartingArea
+              ? `Nearby options use: ${selectedStartingArea.displayName}`
+              : startingArea.trim().length > 0
+                ? "Choose a starting area from the suggestions."
+                : "Defaults to the selected city."}
+          </div>
+          <button className="locationButton" type="button" onClick={useBrowserLocation} disabled={requestingLocation}>
+            <MapPin size={15} />
+            {requestingLocation ? "Requesting location..." : "Use my current location"}
+          </button>
+          {locationMessage ? (
+            <div className="locationMessage" role="status">
+              {locationMessage}
+            </div>
+          ) : null}
+          {showStartingAreaSuggestions && (startingAreaSuggestions.length > 0 || startingAreaSearchLoading) ? (
+            <div className="citySuggestions" role="listbox">
+              {startingAreaSearchLoading ? <div className="citySuggestionStatus">Searching areas...</div> : null}
+              {startingAreaSuggestions.map((area) => (
+                <button
+                  key={area.id}
+                  type="button"
+                  role="option"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    setSelectedStartingArea(area);
+                    setStartingArea(area.displayName);
+                    setStartingAreaSuggestions([]);
+                    setShowStartingAreaSuggestions(false);
+                    setError(null);
+                  }}
+                >
+                  <strong>{area.name}</strong>
+                  <span>{area.displayName}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div className="field cityField">
@@ -421,7 +576,9 @@ export default function Home() {
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
                     setSelectedCity(city);
+                    setSelectedStartingArea(city);
                     setContext({ ...context, city: city.name });
+                    setStartingArea(city.displayName);
                     setCitySuggestions([]);
                     setShowCitySuggestions(false);
                     setError(null);

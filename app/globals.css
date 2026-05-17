@@ -330,6 +330,32 @@ textarea {
   min-height: 22px;
 }
 
+.locationButton {
+  align-items: center;
+  background: #edf1e8;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #46623f;
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 800;
+  gap: 8px;
+  justify-content: center;
+  min-height: 38px;
+  padding: 9px 12px;
+}
+
+.locationButton:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.locationMessage {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .resultsPane {
   display: flex;
   flex-direction: column;
