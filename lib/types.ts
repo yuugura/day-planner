@@ -13,11 +13,15 @@ export type SuggestionCategory =
 export type CostLevel = "free" | "low" | "medium" | "high";
 export type EnergyLevel = "low" | "medium" | "high";
 export type SocialSetting = "solo" | "pair" | "group" | "flexible";
+export type TimeOfDay = "morning" | "midday" | "afternoon" | "evening" | "night";
 
 export type DayContext = {
   city: string;
   weather: WeatherCondition;
   temperatureF: number;
+  localHour: number;
+  timeOfDay: TimeOfDay;
+  timeZone?: string;
   availableHours: number;
   budget: CostLevel;
   energy: EnergyLevel;
@@ -40,6 +44,10 @@ export type WeatherReport = {
   windMph: number;
   weatherCode: number;
   observedAt: string;
+  localHour: number;
+  timeOfDay: TimeOfDay;
+  timeZone?: string;
+  timeZoneAbbreviation?: string;
 };
 
 export type CitySearchResult = {

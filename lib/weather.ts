@@ -1,4 +1,5 @@
-import type { CitySearchResult, WeatherCondition, WeatherReport } from "./types";
+import type { CitySearchResult, TimeOfDay, WeatherCondition, WeatherReport } from "./types";
+import { getCached, stableCacheKey } from "./ttl-cache";
 
 type GeocodingResponse = {
   results?: Array<{
@@ -12,6 +13,8 @@ type GeocodingResponse = {
 };
 
 type ForecastResponse = {
+  timezone?: string;
+  timezone_abbreviation?: string;
   current?: {
     time: string;
     temperature_2m: number;
@@ -47,10 +50,29 @@ export function describeWeatherCode(code: number, temperatureF: number): {
   return { condition: "cloudy", description: "Mixed" };
 }
 
+export function getTimeOfDay(hour: number): TimeOfDay {
+  if (hour >= 5 && hour < 11) return "morning";
+  if (hour >= 11 && hour < 14) return "midday";
+  if (hour >= 14 && hour < 17) return "afternoon";
+  if (hour >= 17 && hour < 22) return "evening";
+  return "night";
+}
+
+function getLocalHour(localTime: string) {
+  const hour = Number(localTime.match(/T(\d{2})/)?.[1]);
+  return Number.isFinite(hour) ? hour : new Date().getHours();
+}
+
 export async function searchCities(query: string, count = 5): Promise<CitySearchResult[]> {
   const trimmedQuery = query.trim();
   if (trimmedQuery.length < 2) return [];
 
+  return getCached("city-search", stableCacheKey({ query: trimmedQuery.toLowerCase(), count }), 24 * 60 * 60 * 1000, () =>
+    searchCitiesUncached(trimmedQuery, count)
+  );
+}
+
+async function searchCitiesUncached(trimmedQuery: string, count: number): Promise<CitySearchResult[]> {
   const geocodeUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
   geocodeUrl.searchParams.set("name", trimmedQuery);
   geocodeUrl.searchParams.set("count", String(count));
@@ -96,6 +118,10 @@ export async function fetchWeatherForCity(city: string): Promise<WeatherReport> 
 }
 
 export async function fetchWeatherForPlace(place: WeatherPlace): Promise<WeatherReport> {
+  return getCached("weather", weatherCacheKey(place), 15 * 60 * 1000, () => fetchWeatherForPlaceUncached(place));
+}
+
+async function fetchWeatherForPlaceUncached(place: WeatherPlace): Promise<WeatherReport> {
   const forecastUrl = new URL("https://api.open-meteo.com/v1/forecast");
   forecastUrl.searchParams.set("latitude", String(place.latitude));
   forecastUrl.searchParams.set("longitude", String(place.longitude));
@@ -115,6 +141,7 @@ export async function fetchWeatherForPlace(place: WeatherPlace): Promise<Weather
   }
 
   const weather = describeWeatherCode(forecast.current.weather_code, forecast.current.temperature_2m);
+  const localHour = getLocalHour(forecast.current.time);
   const displayParts = [place.name, place.admin1, place.country].filter(Boolean);
 
   return {
@@ -125,6 +152,18 @@ export async function fetchWeatherForPlace(place: WeatherPlace): Promise<Weather
     temperatureF: Math.round(forecast.current.temperature_2m),
     windMph: Math.round(forecast.current.wind_speed_10m),
     weatherCode: forecast.current.weather_code,
-    observedAt: forecast.current.time
+    observedAt: forecast.current.time,
+    localHour,
+    timeOfDay: getTimeOfDay(localHour),
+    timeZone: forecast.timezone,
+    timeZoneAbbreviation: forecast.timezone_abbreviation
   };
+}
+
+function weatherCacheKey(place: WeatherPlace) {
+  return stableCacheKey({
+    latitude: Number(place.latitude.toFixed(3)),
+    longitude: Number(place.longitude.toFixed(3)),
+    name: place.name.trim().toLowerCase()
+  });
 }

@@ -88,10 +88,35 @@ type SuggestionForm = {
   tags: string;
   source: Suggestion["source"];
 };
+type CityIdeaDraft = {
+  title: string;
+  category: SuggestionCategory;
+  description: string;
+  locationLabel: string;
+  cost: CostLevel;
+  distanceMiles: number;
+  durationHours: number;
+  energy: EnergyLevel;
+  social: SocialSetting;
+  weatherFit: string[];
+  tags: string[];
+  source: Suggestion["source"];
+};
 
 const tagOptions = ["fresh-air", "food", "focus", "art", "movement", "connection", "creative", "low-planning"];
 const categoryOptions: SuggestionCategory[] = ["outdoors", "culture", "food", "fitness", "social", "productive", "creative", "rest"];
 const weatherOptions = ["clear", "cloudy", "rain", "snow", "hot", "cold"];
+const allDayHours = 24;
+const availableHourOptions = [
+  { label: "30 min", value: 0.5 },
+  { label: "1 hour", value: 1 },
+  { label: "2 hours", value: 2 },
+  { label: "3 hours", value: 3 },
+  { label: "4 hours", value: 4 },
+  { label: "6 hours", value: 6 },
+  { label: "8 hours", value: 8 },
+  { label: "All day", value: allDayHours }
+];
 const userStorageKey = "day-planner-user-id";
 const temperatureUnitStorageKey = "day-planner-temperature-unit";
 
@@ -99,6 +124,9 @@ const initialContext: DayContext = {
   city: "Toronto",
   weather: "cloudy",
   temperatureF: 55,
+  localHour: 12,
+  timeOfDay: "midday",
+  timeZone: "America/Toronto",
   availableHours: 3,
   budget: "low",
   energy: "medium",
@@ -152,6 +180,9 @@ export default function Home() {
   const [savingSuggestion, setSavingSuggestion] = useState(false);
   const [deletingSuggestionId, setDeletingSuggestionId] = useState<string | null>(null);
   const [suggestionMessage, setSuggestionMessage] = useState<string | null>(null);
+  const [cityIdeaDrafts, setCityIdeaDrafts] = useState<CityIdeaDraft[]>([]);
+  const [generatingCityIdeas, setGeneratingCityIdeas] = useState(false);
+  const [savingCityIdeaIndex, setSavingCityIdeaIndex] = useState<number | null>(null);
   const [memory, setMemory] = useState<FeedbackMemory | null>(null);
   const [activeResultsTab, setActiveResultsTab] = useState<ResultsTab>("recommendations");
   const [selectedPickId, setSelectedPickId] = useState<string | null>(null);
@@ -181,7 +212,8 @@ export default function Home() {
     setError(null);
 
     try {
-      const weatherUrl = buildWeatherUrl(nextContext.city, nextSelectedCity);
+      const referenceArea = nextStartingArea ?? nextSelectedCity;
+      const weatherUrl = buildWeatherUrl(nextContext.city, nextSelectedCity, referenceArea);
       const weatherResponse = await fetch(weatherUrl);
       if (!weatherResponse.ok) {
         const payload = (await weatherResponse.json().catch(() => ({}))) as { error?: string };
@@ -191,9 +223,12 @@ export default function Home() {
       const weatherPayload = (await weatherResponse.json()) as { weather: WeatherReport };
       const weatherContext: DayContext = {
         ...nextContext,
-        city: weatherPayload.weather.city,
+        city: nextSelectedCity.name,
         weather: weatherPayload.weather.condition,
-        temperatureF: weatherPayload.weather.temperatureF
+        temperatureF: weatherPayload.weather.temperatureF,
+        localHour: weatherPayload.weather.localHour,
+        timeOfDay: weatherPayload.weather.timeOfDay,
+        timeZone: weatherPayload.weather.timeZone
       };
       setWeatherReport(weatherPayload.weather);
 
@@ -303,6 +338,77 @@ export default function Home() {
       setSuggestionMessage(saveError instanceof Error ? saveError.message : "Could not save suggestion.");
     } finally {
       setSavingSuggestion(false);
+    }
+  }
+
+  function draftToForm(draft: CityIdeaDraft): SuggestionForm {
+    return {
+      title: draft.title,
+      category: draft.category,
+      description: draft.description,
+      locationLabel: draft.locationLabel,
+      cost: draft.cost,
+      distanceMiles: String(draft.distanceMiles),
+      durationHours: String(draft.durationHours),
+      energy: draft.energy,
+      social: draft.social,
+      weatherFit: draft.weatherFit,
+      tags: draft.tags.join(", "),
+      source: draft.source
+    };
+  }
+
+  async function generateCityIdeas() {
+    if (!hasSelectedCity) {
+      setSuggestionMessage("Choose a city before generating ideas.");
+      setShowCitySuggestions(true);
+      return;
+    }
+
+    setGeneratingCityIdeas(true);
+    setSuggestionMessage(null);
+
+    try {
+      const response = await fetch("/api/city-ideas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(context)
+      });
+      const payload = (await response.json().catch(() => ({}))) as { drafts?: CityIdeaDraft[]; error?: string };
+      if (!response.ok || !payload.drafts) throw new Error(payload.error || "Could not generate city ideas.");
+
+      setCityIdeaDrafts(payload.drafts);
+      setSuggestionMessage(`Generated ${payload.drafts.length} city idea${payload.drafts.length === 1 ? "" : "s"}.`);
+    } catch (ideaError) {
+      setSuggestionMessage(ideaError instanceof Error ? ideaError.message : "Could not generate city ideas.");
+    } finally {
+      setGeneratingCityIdeas(false);
+    }
+  }
+
+  async function saveCityIdeaDraft(draft: CityIdeaDraft, index: number) {
+    if (!userId) return;
+
+    setSavingCityIdeaIndex(index);
+    setSuggestionMessage(null);
+
+    try {
+      const response = await fetch("/api/suggestions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...draft, userId })
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Could not save city idea.");
+
+      setCityIdeaDrafts((current) => current.filter((_, draftIndex) => draftIndex !== index));
+      setSuggestionMessage("City idea saved.");
+      await loadSuggestionCatalog(userId);
+      if (hasSelectedCity) await loadRecommendations(context, userId, selectedCity);
+    } catch (saveError) {
+      setSuggestionMessage(saveError instanceof Error ? saveError.message : "Could not save city idea.");
+    } finally {
+      setSavingCityIdeaIndex(null);
     }
   }
 
@@ -762,6 +868,9 @@ export default function Home() {
               <Wind size={15} /> {weatherReport ? `${weatherReport.windMph} mph` : "Not fetched"}
             </span>
             <span>
+              <Clock3 size={15} /> {weatherReport ? formatLocalTime(weatherReport) : context.timeOfDay}
+            </span>
+            <span>
               <MapPin size={15} /> {weatherReport?.displayName || context.city}
             </span>
           </div>
@@ -796,14 +905,16 @@ export default function Home() {
           <span>
             <CalendarDays size={16} /> Available hours
           </span>
-          <input
-            type="number"
-            min="0.5"
-            max="12"
-            step="0.5"
-            value={context.availableHours}
+          <select
+            value={context.availableHours >= allDayHours ? String(allDayHours) : String(context.availableHours)}
             onChange={(event) => setContext({ ...context, availableHours: Number(event.target.value) })}
-          />
+          >
+            {availableHourOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </label>
 
         <div className="tags" aria-label="Preference tags">
@@ -857,7 +968,17 @@ export default function Home() {
               >
                 <X size={17} />
               </button>
-            ) : null}
+            ) : (
+              <button
+                className="secondaryButton compact"
+                type="button"
+                onClick={generateCityIdeas}
+                disabled={generatingCityIdeas || !hasSelectedCity}
+              >
+                <Sparkles size={17} />
+                {generatingCityIdeas ? "Generating..." : "City ideas"}
+              </button>
+            )}
           </div>
 
           <label className="field">
@@ -984,6 +1105,45 @@ export default function Home() {
           <div className="statusLine" role="status">
             {suggestionMessage || `${ownedSuggestions.length} personal suggestion${ownedSuggestions.length === 1 ? "" : "s"}`}
           </div>
+          {cityIdeaDrafts.length > 0 ? (
+            <div className="cityIdeaDrafts" aria-label="Generated city idea drafts">
+              {cityIdeaDrafts.map((draft, index) => (
+                <article className="cityIdeaDraft" key={`${draft.title}-${index}`}>
+                  <div>
+                    <span className="source">{draft.category}</span>
+                    <h3>{draft.title}</h3>
+                    <p>{draft.description}</p>
+                    <div className="metaRow">
+                      <span>{draft.cost}</span>
+                      <span>{draft.durationHours}h</span>
+                      <span>{draft.energy}</span>
+                    </div>
+                  </div>
+                  <div className="draftActions">
+                    <button
+                      className="secondaryButton"
+                      type="button"
+                      onClick={() => {
+                        setEditingSuggestionId(null);
+                        setSuggestionForm(draftToForm(draft));
+                        setSuggestionMessage("Draft loaded into the form.");
+                      }}
+                    >
+                      Use draft
+                    </button>
+                    <button
+                      className="secondaryButton subtle"
+                      type="button"
+                      onClick={() => saveCityIdeaDraft(draft, index)}
+                      disabled={savingCityIdeaIndex === index || !userId}
+                    >
+                      {savingCityIdeaIndex === index ? "Saving..." : "Save"}
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : null}
         </section>
       </section>
 
@@ -1398,15 +1558,23 @@ function updateTemperatureUnit(unit: TemperatureUnit, setTemperatureUnit: (unit:
   window.localStorage.setItem(temperatureUnitStorageKey, unit);
 }
 
-function buildWeatherUrl(city: string, selectedCity: CitySearchResult | null) {
-  const url = new URL("/api/weather", window.location.origin);
-  url.searchParams.set("city", city);
+function formatLocalTime(weather: WeatherReport) {
+  const hour12 = weather.localHour % 12 || 12;
+  const meridiem = weather.localHour < 12 ? "AM" : "PM";
+  return `${hour12} ${meridiem} ${weather.timeZoneAbbreviation || weather.timeOfDay}`;
+}
 
-  if (selectedCity && selectedCity.name === city) {
-    url.searchParams.set("latitude", String(selectedCity.latitude));
-    url.searchParams.set("longitude", String(selectedCity.longitude));
-    if (selectedCity.admin1) url.searchParams.set("admin1", selectedCity.admin1);
-    if (selectedCity.country) url.searchParams.set("country", selectedCity.country);
+function buildWeatherUrl(city: string, selectedCity: CitySearchResult | null, referenceArea: CitySearchResult | null = selectedCity) {
+  const url = new URL("/api/weather", window.location.origin);
+  url.searchParams.set("city", referenceArea?.name || city);
+
+  if (referenceArea) {
+    url.searchParams.set("latitude", String(referenceArea.latitude));
+    url.searchParams.set("longitude", String(referenceArea.longitude));
+    if (selectedCity && selectedCity.name === city && referenceArea.id === selectedCity.id) {
+      if (selectedCity.admin1) url.searchParams.set("admin1", selectedCity.admin1);
+      if (selectedCity.country) url.searchParams.set("country", selectedCity.country);
+    }
   }
 
   return url.toString();

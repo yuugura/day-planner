@@ -65,6 +65,11 @@ function toSuggestion(row: SuggestionRow): Suggestion {
   };
 }
 
+function withDemoPlaybook(suggestions: Suggestion[]) {
+  const existingIds = new Set(suggestions.map((suggestion) => suggestion.id));
+  return [...suggestions, ...demoSuggestions.filter((suggestion) => !existingIds.has(suggestion.id))];
+}
+
 async function ensureSuggestionSchema(db: NonNullable<ReturnType<typeof getPool>>) {
   await db.query("alter table suggestions add column if not exists owner_user_id text");
   await db.query("create index if not exists suggestions_owner_active_idx on suggestions (owner_user_id, active)");
@@ -167,7 +172,7 @@ export async function readSuggestionsWithSource(userId?: string | null): Promise
     );
 
     return result.rows.length > 0
-      ? { suggestions: result.rows.map(toSuggestion), source: "postgres" }
+      ? { suggestions: withDemoPlaybook(result.rows.map(toSuggestion)), source: "postgres" }
       : { suggestions: demoSuggestions, source: "fallback" };
   } catch (error) {
     console.error("Falling back to demo suggestions after database read failed.", error);

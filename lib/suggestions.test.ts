@@ -78,27 +78,24 @@ describe("readSuggestionsWithSource", () => {
 
     const result = await readSuggestionsWithSource();
 
-    expect(result).toEqual({
-      source: "postgres",
-      suggestions: [
-        {
-          id: "library-work",
-          ownerUserId: "user-1",
-          title: "Work from the library",
-          category: "productive",
-          description: "Do one focused work block from a quiet public library.",
-          locationLabel: "Central library",
-          cost: "free",
-          distanceMiles: 2.3,
-          durationHours: 1.5,
-          energy: "medium",
-          social: "solo",
-          weatherFit: ["rain", "snow"],
-          tags: ["focus", "indoors"],
-          source: "productive"
-        }
-      ]
+    expect(result.source).toBe("postgres");
+    expect(result.suggestions[0]).toEqual({
+      id: "library-work",
+      ownerUserId: "user-1",
+      title: "Work from the library",
+      category: "productive",
+      description: "Do one focused work block from a quiet public library.",
+      locationLabel: "Central library",
+      cost: "free",
+      distanceMiles: 2.3,
+      durationHours: 1.5,
+      energy: "medium",
+      social: "solo",
+      weatherFit: ["rain", "snow"],
+      tags: ["focus", "indoors"],
+      source: "productive"
     });
+    expect(result.suggestions).toEqual(expect.arrayContaining([expect.objectContaining({ id: demoSuggestions[0].id })]));
     expect(query).toHaveBeenCalledWith(expect.stringContaining("from suggestions"), [null]);
   });
 });

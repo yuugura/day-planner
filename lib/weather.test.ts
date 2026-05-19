@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { describeWeatherCode, searchCities } from "./weather";
+import { describeWeatherCode, getTimeOfDay, searchCities } from "./weather";
 
 describe("describeWeatherCode", () => {
   it("maps clear, cloudy, rain, and snow weather codes", () => {
@@ -12,6 +12,16 @@ describe("describeWeatherCode", () => {
   it("lets temperature override the code for hot and cold recommender buckets", () => {
     expect(describeWeatherCode(0, 90)).toEqual({ condition: "hot", description: "Hot" });
     expect(describeWeatherCode(0, 22)).toEqual({ condition: "cold", description: "Cold" });
+  });
+});
+
+describe("getTimeOfDay", () => {
+  it("maps local hours into planner time buckets", () => {
+    expect(getTimeOfDay(8)).toBe("morning");
+    expect(getTimeOfDay(12)).toBe("midday");
+    expect(getTimeOfDay(15)).toBe("afternoon");
+    expect(getTimeOfDay(19)).toBe("evening");
+    expect(getTimeOfDay(23)).toBe("night");
   });
 });
 

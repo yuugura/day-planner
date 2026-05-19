@@ -6,6 +6,9 @@ const context: DayContext = {
   city: "Toronto",
   weather: "rain",
   temperatureF: 52,
+  localHour: 12,
+  timeOfDay: "midday",
+  timeZone: "America/Toronto",
   availableHours: 2,
   budget: "low",
   energy: "medium",
@@ -58,6 +61,8 @@ describe("extractFeatures", () => {
       within_budget: 1,
       distance: 0.15,
       duration_fit: 1,
+      time_fit: 0.75,
+      local_hour: 12 / 23,
       energy_match: 1,
       social_match: 1,
       tag_overlap: 2 / 3,
@@ -71,6 +76,7 @@ describe("extractFeatures", () => {
 
     expect(features.weather_match).toBe(0);
     expect(features.duration_fit).toBe(0);
+    expect(features.time_fit).toBe(0.5);
     expect(features.energy_match).toBe(0.5);
     expect(features.social_match).toBe(0);
     expect(features.tag_overlap).toBe(0);
@@ -113,6 +119,39 @@ describe("rankSuggestions", () => {
     expect(ranked[0].score).toBeGreaterThanOrEqual(ranked[1].score);
     expect(ranked[0].reasons).toContain("fits the weather");
     expect(ranked.every((suggestion) => suggestion.score >= 0 && suggestion.score <= 1)).toBe(true);
+  });
+
+  it("uses local time to separate lunch and evening ideas", () => {
+    const lunchSuggestion: Suggestion = { ...indoorSuggestion, id: "lunch", title: "Lunch stop", tags: ["food", "lunch"] };
+    const eveningSuggestion: Suggestion = {
+      ...indoorSuggestion,
+      id: "evening",
+      title: "Evening drink",
+      category: "social",
+      tags: ["connection", "evening"]
+    };
+
+    const middayRanked = rankSuggestions([eveningSuggestion, lunchSuggestion], { ...context, timeOfDay: "midday", localHour: 12 }, []);
+    const eveningRanked = rankSuggestions([lunchSuggestion, eveningSuggestion], { ...context, timeOfDay: "evening", localHour: 19 }, []);
+
+    expect(middayRanked[0].id).toBe("lunch");
+    expect(eveningRanked[0].id).toBe("evening");
+  });
+
+  it("treats all-day availability as an open planning window", () => {
+    const longOuting: Suggestion = {
+      ...indoorSuggestion,
+      id: "long-outing",
+      title: "Spend the day out",
+      distanceMiles: 0.5,
+      durationHours: 8,
+      tags: ["indoors", "food", "lunch"]
+    };
+
+    const ranked = rankSuggestions([outdoorSuggestion, longOuting], { ...context, availableHours: 24 }, []);
+
+    expect(ranked[0].id).toBe("long-outing");
+    expect(ranked[0].reasons).toContain("works for an open day");
   });
 
   it("uses learned feedback after enough examples are available", () => {

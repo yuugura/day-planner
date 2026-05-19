@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchEventSuggestions, fetchEventSuggestionsSafe } from "./events";
+import { clearCache } from "./ttl-cache";
 
 describe("fetchEventSuggestions", () => {
   const originalApiKey = process.env.TICKETMASTER_API_KEY;
 
   afterEach(() => {
+    clearCache("events");
     process.env.TICKETMASTER_API_KEY = originalApiKey;
     vi.restoreAllMocks();
   });
@@ -100,6 +102,7 @@ describe("fetchEventSuggestionsSafe", () => {
   const originalApiKey = process.env.TICKETMASTER_API_KEY;
 
   afterEach(() => {
+    clearCache("events");
     process.env.TICKETMASTER_API_KEY = originalApiKey;
     vi.restoreAllMocks();
   });

@@ -7,6 +7,7 @@ import type {
   SuggestionCategory,
   WeatherCondition
 } from "./types";
+import { getCached, stableCacheKey } from "./ttl-cache";
 
 type TicketmasterResponse = {
   _embedded?: {
@@ -69,6 +70,10 @@ export async function fetchEventSuggestions(place: PlaceLookup, limit = 6): Prom
   const apiKey = process.env.TICKETMASTER_API_KEY?.trim();
   if (!apiKey || !Number.isFinite(place.latitude) || !Number.isFinite(place.longitude)) return [];
 
+  return getCached("events", eventCacheKey(place, limit), 30 * 60 * 1000, () => fetchEventSuggestionsUncached(place, limit, apiKey));
+}
+
+async function fetchEventSuggestionsUncached(place: PlaceLookup, limit: number, apiKey: string): Promise<Suggestion[]> {
   const url = new URL("https://app.ticketmaster.com/discovery/v2/events.json");
   url.searchParams.set("apikey", apiKey);
   url.searchParams.set("latlong", `${place.latitude},${place.longitude}`);
@@ -94,6 +99,14 @@ export async function fetchEventSuggestions(place: PlaceLookup, limit = 6): Prom
     .map((event) => toSuggestion(event, place))
     .filter((suggestion): suggestion is Suggestion => suggestion !== null)
     .slice(0, limit);
+}
+
+function eventCacheKey(place: PlaceLookup, limit: number) {
+  return stableCacheKey({
+    latitude: Number(place.latitude.toFixed(2)),
+    longitude: Number(place.longitude.toFixed(2)),
+    limit
+  });
 }
 
 export async function fetchEventSuggestionsSafe(place?: PlaceLookup | null, limit = 6): Promise<Suggestion[]> {

@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchPlaceSuggestions, fetchPlaceSuggestionsSafe } from "./places";
+import { clearCache } from "./ttl-cache";
 
 describe("fetchPlaceSuggestions", () => {
   afterEach(() => {
+    clearCache("places");
     vi.restoreAllMocks();
   });
 
@@ -121,6 +123,7 @@ describe("fetchPlaceSuggestions", () => {
 
 describe("fetchPlaceSuggestionsSafe", () => {
   afterEach(() => {
+    clearCache("places");
     vi.restoreAllMocks();
   });
 

@@ -7,6 +7,7 @@ import type {
   SuggestionCategory,
   WeatherCondition
 } from "./types";
+import { getCached, stableCacheKey } from "./ttl-cache";
 
 type OverpassElement = {
   type: "node" | "way" | "relation";
@@ -64,6 +65,10 @@ const overpassEndpoints = [
 export async function fetchPlaceSuggestions(place: PlaceLookup, limit = 8): Promise<Suggestion[]> {
   if (!Number.isFinite(place.latitude) || !Number.isFinite(place.longitude)) return [];
 
+  return getCached("places", placeCacheKey(place, limit), 6 * 60 * 60 * 1000, () => fetchPlaceSuggestionsUncached(place, limit));
+}
+
+async function fetchPlaceSuggestionsUncached(place: PlaceLookup, limit: number): Promise<Suggestion[]> {
   const query = overpassQuery
     .replaceAll("{{lat}}", String(place.latitude))
     .replaceAll("{{lon}}", String(place.longitude));
@@ -96,6 +101,14 @@ export async function fetchPlaceSuggestions(place: PlaceLookup, limit = 8): Prom
   }
 
   throw new Error(`Could not fetch places for ${place.city}. ${lastError?.message ?? ""}`.trim());
+}
+
+function placeCacheKey(place: PlaceLookup, limit: number) {
+  return stableCacheKey({
+    latitude: Number(place.latitude.toFixed(3)),
+    longitude: Number(place.longitude.toFixed(3)),
+    limit
+  });
 }
 
 function mapOverpassElements(payload: OverpassResponse, place: PlaceLookup, limit: number): Suggestion[] {

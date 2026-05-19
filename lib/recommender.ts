@@ -5,7 +5,8 @@ import type {
   FeedbackRecord,
   ScoredSuggestion,
   SocialSetting,
-  Suggestion
+  Suggestion,
+  TimeOfDay
 } from "./types";
 
 const costRank: Record<CostLevel, number> = { free: 0, low: 1, medium: 2, high: 3 };
@@ -19,11 +20,40 @@ function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
 }
 
+function getTimeFit(suggestion: Suggestion, timeOfDay: TimeOfDay) {
+  const tags = new Set(suggestion.tags.map((tag) => tag.toLowerCase()));
+  const explicitTags: Record<TimeOfDay, string[]> = {
+    morning: ["morning", "breakfast", "coffee", "early"],
+    midday: ["midday", "lunch", "brunch"],
+    afternoon: ["afternoon", "errand", "explore"],
+    evening: ["evening", "dinner", "date-friendly", "drinks"],
+    night: ["night", "late", "wind-down"]
+  };
+
+  if (explicitTags[timeOfDay].some((tag) => tags.has(tag))) return 1;
+
+  if (timeOfDay === "morning") {
+    return suggestion.category === "productive" || suggestion.category === "fitness" || tags.has("coffee") ? 0.75 : 0.45;
+  }
+  if (timeOfDay === "midday") {
+    return suggestion.category === "food" || suggestion.category === "outdoors" || suggestion.durationHours <= 1.5 ? 0.75 : 0.5;
+  }
+  if (timeOfDay === "afternoon") {
+    return suggestion.category === "culture" || suggestion.category === "outdoors" || suggestion.category === "creative" ? 0.75 : 0.55;
+  }
+  if (timeOfDay === "evening") {
+    return suggestion.category === "food" || suggestion.category === "social" || suggestion.category === "rest" ? 0.75 : 0.45;
+  }
+
+  return suggestion.category === "rest" || suggestion.energy === "low" ? 0.75 : 0.35;
+}
+
 export function extractFeatures(suggestion: Suggestion, context: DayContext): Record<string, number> {
   const tagOverlap = suggestion.tags.filter((tag) => context.preferenceTags.includes(tag)).length;
   const socialMatch = suggestion.social === context.social || suggestion.social === "flexible" ? 1 : 0;
   const budgetFit = costRank[suggestion.cost] <= costRank[context.budget] ? 1 : 0;
   const energyGap = Math.abs(energyRank[suggestion.energy] - energyRank[context.energy]);
+  const timeFit = getTimeFit(suggestion, context.timeOfDay);
 
   return {
     bias: 1,
@@ -40,6 +70,8 @@ export function extractFeatures(suggestion: Suggestion, context: DayContext): Re
     within_budget: budgetFit,
     distance: Math.min(suggestion.distanceMiles / 10, 1),
     duration_fit: suggestion.durationHours <= context.availableHours ? 1 : 0,
+    time_fit: timeFit,
+    local_hour: context.localHour / 23,
     energy_match: 1 - energyGap / 2,
     social_match: socialMatch,
     tag_overlap: Math.min(tagOverlap / 3, 1),
@@ -88,7 +120,15 @@ function scoreRules(suggestion: Suggestion, context: DayContext) {
 
   if (suggestion.durationHours <= context.availableHours) {
     score += 0.1;
-    reasons.push("fits your available time");
+    reasons.push(context.availableHours >= 24 ? "works for an open day" : "fits your available time");
+  }
+
+  const timeFit = getTimeFit(suggestion, context.timeOfDay);
+  if (timeFit >= 0.75) {
+    score += 0.12;
+    reasons.push(`fits the ${context.timeOfDay}`);
+  } else if (timeFit < 0.4) {
+    score -= 0.06;
   }
 
   const energyGap = Math.abs(energyRank[suggestion.energy] - energyRank[context.energy]);
