@@ -1,4 +1,5 @@
-import { getGeminiModel } from "./gemini-client";
+import { generateGroundedContent } from "./gemini-client";
+import { getPool } from "./db";
 import { getCached, stableCacheKey } from "./ttl-cache";
 import type {
   CostLevel,
@@ -31,29 +32,109 @@ const energies: EnergyLevel[] = ["low", "medium", "high"];
 const socialSettings: SocialSetting[] = ["solo", "pair", "group", "flexible"];
 const weatherConditions: WeatherCondition[] = ["clear", "cloudy", "rain", "snow", "hot", "cold"];
 const sources: Suggestion["source"][] = ["event", "city", "everyday", "productive"];
+const persistentCacheTtlMs = 7 * 24 * 60 * 60 * 1000;
+
+type CityIdeaCacheRow = {
+  drafts: CityIdeaDraft[];
+};
 
 export async function generateCityIdeaDrafts(context: DayContext): Promise<CityIdeaDraft[]> {
   return getCached("city-ideas", cityIdeasCacheKey(context), 6 * 60 * 60 * 1000, () => generateCityIdeaDraftsUncached(context));
 }
 
 async function generateCityIdeaDraftsUncached(context: DayContext): Promise<CityIdeaDraft[]> {
-  const model = getGeminiModel();
-  if (!model) return fallbackCityIdeas(context);
+  const cacheKey = cityIdeasCacheKey(context);
+  const cachedDrafts = await readPersistentCityIdeaCache(cacheKey);
+  if (cachedDrafts) return cachedDrafts;
 
   try {
-    const result = await model.generateContent(
-      `Generate 8 practical day-plan suggestion drafts for ${context.city}.
-Use the city as inspiration, but do not invent exact live events, opening hours, or facts that require confirmation.
+    const text = await generateGroundedContent(
+      `Use Google Search to identify common activities, neighborhoods, local plan patterns, and recurring advice for what people like to do in ${context.city}.
+Generate 8 practical day-plan suggestion drafts for ${context.city}.
+Do not invent exact live events, opening hours, or facts that require confirmation.
+Do not copy source wording. Summarize common patterns into original, practical plan ideas.
 Current context: weather=${context.weather}, temperatureF=${context.temperatureF}, local time bucket=${context.timeOfDay}, availableHours=${context.availableHours}, budget=${context.budget}, energy=${context.energy}, social=${context.social}.
 Return only JSON with this shape:
 {"suggestions":[{"title":"...","category":"outdoors|culture|food|fitness|social|productive|creative|rest","description":"...","locationLabel":"...","cost":"free|low|medium|high","distanceMiles":1.5,"durationHours":1.25,"energy":"low|medium|high","social":"solo|pair|group|flexible","weatherFit":["clear"],"tags":["midday","food"],"source":"city|event|everyday|productive"}]}
 Descriptions should be specific enough to feel city-aware, but generic enough that OpenStreetMap or Ticketmaster can supply concrete places later.`
     );
+    if (!text) return fallbackCityIdeas(context);
 
-    return normalizeDrafts(extractJson(result.response.text())).slice(0, 8);
+    const drafts = normalizeDrafts(extractJson(text)).slice(0, 8);
+    await writePersistentCityIdeaCache(cacheKey, context, drafts);
+    return drafts;
   } catch (error) {
     console.error("Falling back to local city ideas after Gemini failed.", error);
     return fallbackCityIdeas(context);
+  }
+}
+
+async function ensureCityIdeaCacheSchema(db: NonNullable<ReturnType<typeof getPool>>) {
+  await db.query(`
+    create table if not exists city_idea_cache (
+      cache_key text primary key,
+      city text not null,
+      context jsonb not null,
+      drafts jsonb not null,
+      expires_at timestamptz not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )
+  `);
+  await db.query("create index if not exists city_idea_cache_expires_idx on city_idea_cache (expires_at)");
+}
+
+async function readPersistentCityIdeaCache(cacheKey: string) {
+  const db = getPool();
+  if (!db) return null;
+
+  try {
+    await ensureCityIdeaCacheSchema(db);
+    const result = await db.query<CityIdeaCacheRow>(
+      "select drafts from city_idea_cache where cache_key = $1 and expires_at > now()",
+      [cacheKey]
+    );
+    const drafts = result.rows[0]?.drafts;
+    return Array.isArray(drafts) ? normalizeDrafts({ suggestions: drafts }).slice(0, 8) : null;
+  } catch (error) {
+    console.error("Skipping persistent city idea cache after database read failed.", error);
+    return null;
+  }
+}
+
+async function writePersistentCityIdeaCache(cacheKey: string, context: DayContext, drafts: CityIdeaDraft[]) {
+  const db = getPool();
+  if (!db || drafts.length === 0) return;
+
+  try {
+    await ensureCityIdeaCacheSchema(db);
+    await db.query(
+      `insert into city_idea_cache (cache_key, city, context, drafts, expires_at)
+       values ($1, $2, $3::jsonb, $4::jsonb, $5)
+       on conflict (cache_key) do update set
+         city = excluded.city,
+         context = excluded.context,
+         drafts = excluded.drafts,
+         expires_at = excluded.expires_at,
+         updated_at = now()`,
+      [
+        cacheKey,
+        context.city,
+        JSON.stringify({
+          city: context.city,
+          weather: context.weather,
+          timeOfDay: context.timeOfDay,
+          availableHours: context.availableHours,
+          budget: context.budget,
+          energy: context.energy,
+          social: context.social
+        }),
+        JSON.stringify(drafts),
+        new Date(Date.now() + persistentCacheTtlMs)
+      ]
+    );
+  } catch (error) {
+    console.error("Skipping persistent city idea cache after database write failed.", error);
   }
 }
 
@@ -142,6 +223,33 @@ function normalizeTags(value: unknown) {
         .slice(0, 8)
     )
   ];
+}
+
+export function cityIdeaDraftsToSuggestions(context: DayContext, drafts: CityIdeaDraft[]): Suggestion[] {
+  return drafts.map((draft, index) => ({
+    id: `city-idea-${slugify(`${context.city}-${draft.title}`)}-${index}`,
+    ownerUserId: null,
+    title: draft.title,
+    category: draft.category,
+    description: draft.description,
+    locationLabel: draft.locationLabel,
+    cost: draft.cost,
+    distanceMiles: draft.distanceMiles,
+    durationHours: draft.durationHours,
+    energy: draft.energy,
+    social: draft.social,
+    weatherFit: draft.weatherFit,
+    tags: [...new Set(["city-idea", ...draft.tags])],
+    source: draft.source === "event" ? "city" : draft.source
+  }));
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 72);
 }
 
 function fallbackCityIdeas(context: DayContext): CityIdeaDraft[] {

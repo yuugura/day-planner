@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { resolvePersonalizationUserId } from "@/lib/auth";
+import { cityIdeaDraftsToSuggestions, generateCityIdeaDrafts } from "@/lib/city-ideas";
 import { readFeedback } from "@/lib/db";
 import { fetchEventSuggestionsSafe } from "@/lib/events";
 import { summarizePlan } from "@/lib/gemini";
@@ -35,13 +36,15 @@ export async function POST(request: Request) {
   };
   const userId = await resolvePersonalizationUserId(request, body.userId);
   const placeLookup = normalizePlaceLookup(body.place, context.city);
-  const [feedback, availableSuggestions, placeSuggestions, eventSuggestions] = await Promise.all([
+  const [feedback, availableSuggestions, cityIdeaDrafts, placeSuggestions, eventSuggestions] = await Promise.all([
     readFeedback(userId),
     readSuggestions(userId),
+    generateCityIdeaDrafts(context),
     fetchPlaceSuggestionsSafe(placeLookup),
     fetchEventSuggestionsSafe(placeLookup)
   ]);
-  const suggestions = rankSuggestions(availableSuggestions, context, feedback);
+  const cityIdeaSuggestions = cityIdeaDraftsToSuggestions(context, cityIdeaDrafts);
+  const suggestions = rankSuggestions([...availableSuggestions, ...cityIdeaSuggestions], context, feedback);
   const summary = await summarizePlan(context, suggestions).catch(() => "");
 
   return NextResponse.json({
@@ -51,6 +54,7 @@ export async function POST(request: Request) {
     livePlaces: placeSuggestions,
     liveEvents: eventSuggestions,
     trainingExamples: feedback.length,
+    cityIdeaCount: cityIdeaSuggestions.length,
     livePlaceCount: placeSuggestions.length,
     liveEventCount: eventSuggestions.length
   });

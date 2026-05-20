@@ -1,14 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { generateCityIdeaDrafts } from "./city-ideas";
+import { cityIdeaDraftsToSuggestions, generateCityIdeaDrafts } from "./city-ideas";
 import type { DayContext } from "./types";
 
 vi.mock("./gemini-client", () => ({
-  getGeminiModel: vi.fn()
+  generateGroundedContent: vi.fn()
 }));
 
-import { getGeminiModel } from "./gemini-client";
+vi.mock("./db", () => ({
+  getPool: vi.fn()
+}));
 
-const mockedGetGeminiModel = vi.mocked(getGeminiModel);
+import { generateGroundedContent } from "./gemini-client";
+import { getPool } from "./db";
+import { clearCache } from "./ttl-cache";
+
+const mockedGenerateGroundedContent = vi.mocked(generateGroundedContent);
+const mockedGetPool = vi.mocked(getPool);
 
 const context: DayContext = {
   city: "Toronto",
@@ -28,13 +35,15 @@ describe("generateCityIdeaDrafts", () => {
   const originalKey = process.env.GEMINI_API_KEY;
 
   afterEach(() => {
+    clearCache("city-ideas");
     process.env.GEMINI_API_KEY = originalKey;
-    mockedGetGeminiModel.mockReset();
+    mockedGenerateGroundedContent.mockReset();
+    mockedGetPool.mockReset();
   });
 
   it("returns local fallback drafts when Gemini is not configured", async () => {
     delete process.env.GEMINI_API_KEY;
-    mockedGetGeminiModel.mockReturnValue(null);
+    mockedGenerateGroundedContent.mockResolvedValue(null);
 
     const drafts = await generateCityIdeaDrafts(context);
 
@@ -50,16 +59,75 @@ describe("generateCityIdeaDrafts", () => {
   });
 
   it("caches generated drafts for repeated matching contexts", async () => {
-    const generateContent = vi.fn().mockResolvedValue({
-      response: {
-        text: () =>
-          JSON.stringify({
-            suggestions: [
+    mockedGenerateGroundedContent.mockResolvedValue(
+      JSON.stringify({
+        suggestions: [
+          {
+            title: "Generated idea",
+            category: "culture",
+            description: "A generated city-aware plan.",
+            locationLabel: "A useful city anchor",
+            cost: "low",
+            distanceMiles: 1,
+            durationHours: 1,
+            energy: "low",
+            social: "solo",
+            weatherFit: ["rain"],
+            tags: ["evening"],
+            source: "city"
+          }
+        ]
+      })
+    );
+
+    await generateCityIdeaDrafts({ ...context, city: "Cache City" });
+    await generateCityIdeaDrafts({ ...context, city: "Cache City" });
+
+    expect(mockedGenerateGroundedContent).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps drafts into temporary suggestions for ranking", () => {
+    const suggestions = cityIdeaDraftsToSuggestions(context, [
+      {
+        title: "Generated Event Pattern",
+        category: "social",
+        description: "A reusable generated plan.",
+        locationLabel: "A community venue",
+        cost: "low",
+        distanceMiles: 2,
+        durationHours: 1.5,
+        energy: "medium",
+        social: "group",
+        weatherFit: ["rain"],
+        tags: ["evening"],
+        source: "event"
+      }
+    ]);
+
+    expect(suggestions[0]).toEqual(
+      expect.objectContaining({
+        id: expect.stringContaining("city-idea-toronto-generated-event-pattern"),
+        ownerUserId: null,
+        source: "city",
+        tags: ["city-idea", "evening"]
+      })
+    );
+  });
+
+  it("reuses persistent cached drafts when Postgres has a fresh cache row", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            drafts: [
               {
-                title: "Generated idea",
-                category: "culture",
-                description: "A generated city-aware plan.",
-                locationLabel: "A useful city anchor",
+                title: "Cached idea",
+                category: "food",
+                description: "A cached city idea.",
+                locationLabel: "Cached neighborhood",
                 cost: "low",
                 distanceMiles: 1,
                 durationHours: 1,
@@ -70,14 +138,14 @@ describe("generateCityIdeaDrafts", () => {
                 source: "city"
               }
             ]
-          })
-      }
-    });
-    mockedGetGeminiModel.mockReturnValue({ generateContent } as never);
+          }
+        ]
+      });
+    mockedGetPool.mockReturnValue({ query } as never);
 
-    await generateCityIdeaDrafts({ ...context, city: "Cache City" });
-    await generateCityIdeaDrafts({ ...context, city: "Cache City" });
+    const drafts = await generateCityIdeaDrafts({ ...context, city: "Persistent Cache City" });
 
-    expect(generateContent).toHaveBeenCalledTimes(1);
+    expect(drafts[0].title).toBe("Cached idea");
+    expect(mockedGenerateGroundedContent).not.toHaveBeenCalled();
   });
 });

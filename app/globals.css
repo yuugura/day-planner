@@ -80,6 +80,7 @@ h1 {
 .metric span,
 .source,
 .eventSource,
+.ideaSource,
 .placeSource {
   color: var(--muted);
   font-size: 0.82rem;
@@ -346,17 +347,6 @@ textarea {
   color: white;
   gap: 9px;
   min-height: 42px;
-}
-
-.secondaryButton.subtle {
-  background: #edf1e8;
-  color: var(--ink);
-}
-
-.secondaryButton.compact {
-  font-size: 0.82rem;
-  min-height: 36px;
-  padding: 0 12px;
 }
 
 .primaryButton:disabled,
@@ -678,6 +668,18 @@ textarea {
   padding: 4px;
 }
 
+.resultsToolbar {
+  align-items: stretch;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.refreshButton {
+  height: auto;
+  min-height: 48px;
+}
+
 .resultTabs button {
   align-items: center;
   background: transparent;
@@ -788,39 +790,6 @@ textarea {
   gap: 10px;
 }
 
-.cityIdeaDrafts {
-  display: grid;
-  gap: 10px;
-  padding-top: 6px;
-}
-
-.cityIdeaDraft {
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-}
-
-.cityIdeaDraft h3 {
-  font-size: 1rem;
-  line-height: 1.25;
-  margin-top: 3px;
-}
-
-.cityIdeaDraft p {
-  color: #4d534a;
-  line-height: 1.45;
-  margin: 6px 0 10px;
-}
-
-.draftActions {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: 1fr 1fr;
-}
-
 .ownedSuggestion {
   align-items: flex-start;
   background: rgba(255, 255, 255, 0.78);
@@ -880,6 +849,7 @@ textarea {
 }
 
 .eventSource,
+.ideaSource,
 .placeSource {
   background: #fff7df;
   border: 1px solid #ecdca8;
@@ -889,6 +859,12 @@ textarea {
   font-weight: 800;
   line-height: 1;
   padding: 5px 7px;
+}
+
+.ideaSource {
+  background: #eaf0ff;
+  border-color: #c9d7ff;
+  color: #294f9c;
 }
 
 .placeSource {

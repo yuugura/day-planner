@@ -16,6 +16,7 @@ import {
   LogOut,
   MapPin,
   Plus,
+  RefreshCw,
   Save,
   Send,
   Sparkles,
@@ -46,6 +47,7 @@ type PlannerResponse = {
   livePlaces: Suggestion[];
   liveEvents: Suggestion[];
   trainingExamples: number;
+  cityIdeaCount: number;
   livePlaceCount: number;
   liveEventCount: number;
 };
@@ -88,20 +90,6 @@ type SuggestionForm = {
   tags: string;
   source: Suggestion["source"];
 };
-type CityIdeaDraft = {
-  title: string;
-  category: SuggestionCategory;
-  description: string;
-  locationLabel: string;
-  cost: CostLevel;
-  distanceMiles: number;
-  durationHours: number;
-  energy: EnergyLevel;
-  social: SocialSetting;
-  weatherFit: string[];
-  tags: string[];
-  source: Suggestion["source"];
-};
 
 const tagOptions = ["fresh-air", "food", "focus", "art", "movement", "connection", "creative", "low-planning"];
 const categoryOptions: SuggestionCategory[] = ["outdoors", "culture", "food", "fitness", "social", "productive", "creative", "rest"];
@@ -119,6 +107,7 @@ const availableHourOptions = [
 ];
 const userStorageKey = "day-planner-user-id";
 const temperatureUnitStorageKey = "day-planner-temperature-unit";
+const visiblePickCount = 4;
 
 const initialContext: DayContext = {
   city: "Toronto",
@@ -156,6 +145,7 @@ export default function Home() {
   const [lastPlannedAt, setLastPlannedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [feedbackState, setFeedbackState] = useState<Record<string, boolean>>({});
+  const [dismissedPickIds, setDismissedPickIds] = useState<string[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [anonymousUserId, setAnonymousUserId] = useState<string | null>(null);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
@@ -180,14 +170,13 @@ export default function Home() {
   const [savingSuggestion, setSavingSuggestion] = useState(false);
   const [deletingSuggestionId, setDeletingSuggestionId] = useState<string | null>(null);
   const [suggestionMessage, setSuggestionMessage] = useState<string | null>(null);
-  const [cityIdeaDrafts, setCityIdeaDrafts] = useState<CityIdeaDraft[]>([]);
-  const [generatingCityIdeas, setGeneratingCityIdeas] = useState(false);
-  const [savingCityIdeaIndex, setSavingCityIdeaIndex] = useState<number | null>(null);
   const [memory, setMemory] = useState<FeedbackMemory | null>(null);
   const [activeResultsTab, setActiveResultsTab] = useState<ResultsTab>("recommendations");
   const [selectedPickId, setSelectedPickId] = useState<string | null>(null);
 
   const topSuggestion = data?.suggestions[0];
+  const visibleSuggestions =
+    data?.suggestions.filter((suggestion) => !dismissedPickIds.includes(suggestion.id)).slice(0, visiblePickCount) ?? [];
   const selectedPick = data?.suggestions.find((suggestion) => suggestion.id === selectedPickId) ?? null;
   const hasSelectedCity = selectedCity !== null && selectedCity.name === context.city;
   const ownedSuggestions = suggestionCatalog.filter((suggestion) => suggestion.ownerUserId === userId);
@@ -200,7 +189,8 @@ export default function Home() {
     nextContext = context,
     nextUserId = userId,
     nextSelectedCity = selectedCity,
-    nextStartingArea = getActiveReferenceArea()
+    nextStartingArea = getActiveReferenceArea(),
+    options: { resetDismissed?: boolean } = {}
   ) {
     if (!nextSelectedCity || nextSelectedCity.name !== nextContext.city) {
       setError("Choose a city from the suggestions before planning.");
@@ -252,6 +242,7 @@ export default function Home() {
 
       const payload = (await response.json()) as PlannerResponse;
       setData(payload);
+      if (options.resetDismissed ?? true) setDismissedPickIds([]);
       setContext(payload.context);
       setLastPlannedAt(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }));
     } catch (requestError) {
@@ -264,12 +255,16 @@ export default function Home() {
 
   async function submitFeedback(suggestion: ScoredSuggestion, liked: boolean) {
     setFeedbackState((current) => ({ ...current, [suggestion.id]: liked }));
+    if (!liked) {
+      setDismissedPickIds((current) => (current.includes(suggestion.id) ? current : [...current, suggestion.id]));
+      if (selectedPickId === suggestion.id) setSelectedPickId(null);
+    }
     await fetch("/api/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, suggestionId: suggestion.id, liked, context, suggestion })
     });
-    await loadRecommendations();
+    void loadRecommendations(context, userId, selectedCity, getActiveReferenceArea(), { resetDismissed: false });
     await loadMemory();
   }
 
@@ -338,77 +333,6 @@ export default function Home() {
       setSuggestionMessage(saveError instanceof Error ? saveError.message : "Could not save suggestion.");
     } finally {
       setSavingSuggestion(false);
-    }
-  }
-
-  function draftToForm(draft: CityIdeaDraft): SuggestionForm {
-    return {
-      title: draft.title,
-      category: draft.category,
-      description: draft.description,
-      locationLabel: draft.locationLabel,
-      cost: draft.cost,
-      distanceMiles: String(draft.distanceMiles),
-      durationHours: String(draft.durationHours),
-      energy: draft.energy,
-      social: draft.social,
-      weatherFit: draft.weatherFit,
-      tags: draft.tags.join(", "),
-      source: draft.source
-    };
-  }
-
-  async function generateCityIdeas() {
-    if (!hasSelectedCity) {
-      setSuggestionMessage("Choose a city before generating ideas.");
-      setShowCitySuggestions(true);
-      return;
-    }
-
-    setGeneratingCityIdeas(true);
-    setSuggestionMessage(null);
-
-    try {
-      const response = await fetch("/api/city-ideas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(context)
-      });
-      const payload = (await response.json().catch(() => ({}))) as { drafts?: CityIdeaDraft[]; error?: string };
-      if (!response.ok || !payload.drafts) throw new Error(payload.error || "Could not generate city ideas.");
-
-      setCityIdeaDrafts(payload.drafts);
-      setSuggestionMessage(`Generated ${payload.drafts.length} city idea${payload.drafts.length === 1 ? "" : "s"}.`);
-    } catch (ideaError) {
-      setSuggestionMessage(ideaError instanceof Error ? ideaError.message : "Could not generate city ideas.");
-    } finally {
-      setGeneratingCityIdeas(false);
-    }
-  }
-
-  async function saveCityIdeaDraft(draft: CityIdeaDraft, index: number) {
-    if (!userId) return;
-
-    setSavingCityIdeaIndex(index);
-    setSuggestionMessage(null);
-
-    try {
-      const response = await fetch("/api/suggestions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...draft, userId })
-      });
-      const payload = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(payload.error || "Could not save city idea.");
-
-      setCityIdeaDrafts((current) => current.filter((_, draftIndex) => draftIndex !== index));
-      setSuggestionMessage("City idea saved.");
-      await loadSuggestionCatalog(userId);
-      if (hasSelectedCity) await loadRecommendations(context, userId, selectedCity);
-    } catch (saveError) {
-      setSuggestionMessage(saveError instanceof Error ? saveError.message : "Could not save city idea.");
-    } finally {
-      setSavingCityIdeaIndex(null);
     }
   }
 
@@ -968,17 +892,7 @@ export default function Home() {
               >
                 <X size={17} />
               </button>
-            ) : (
-              <button
-                className="secondaryButton compact"
-                type="button"
-                onClick={generateCityIdeas}
-                disabled={generatingCityIdeas || !hasSelectedCity}
-              >
-                <Sparkles size={17} />
-                {generatingCityIdeas ? "Generating..." : "City ideas"}
-              </button>
-            )}
+            ) : null}
           </div>
 
           <label className="field">
@@ -1105,45 +1019,6 @@ export default function Home() {
           <div className="statusLine" role="status">
             {suggestionMessage || `${ownedSuggestions.length} personal suggestion${ownedSuggestions.length === 1 ? "" : "s"}`}
           </div>
-          {cityIdeaDrafts.length > 0 ? (
-            <div className="cityIdeaDrafts" aria-label="Generated city idea drafts">
-              {cityIdeaDrafts.map((draft, index) => (
-                <article className="cityIdeaDraft" key={`${draft.title}-${index}`}>
-                  <div>
-                    <span className="source">{draft.category}</span>
-                    <h3>{draft.title}</h3>
-                    <p>{draft.description}</p>
-                    <div className="metaRow">
-                      <span>{draft.cost}</span>
-                      <span>{draft.durationHours}h</span>
-                      <span>{draft.energy}</span>
-                    </div>
-                  </div>
-                  <div className="draftActions">
-                    <button
-                      className="secondaryButton"
-                      type="button"
-                      onClick={() => {
-                        setEditingSuggestionId(null);
-                        setSuggestionForm(draftToForm(draft));
-                        setSuggestionMessage("Draft loaded into the form.");
-                      }}
-                    >
-                      Use draft
-                    </button>
-                    <button
-                      className="secondaryButton subtle"
-                      type="button"
-                      onClick={() => saveCityIdeaDraft(draft, index)}
-                      disabled={savingCityIdeaIndex === index || !userId}
-                    >
-                      {savingCityIdeaIndex === index ? "Saving..." : "Save"}
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : null}
         </section>
       </section>
 
@@ -1163,46 +1038,62 @@ export default function Home() {
 
         <div className="insightGrid">
           <Metric icon={<BriefcaseBusiness size={18} />} label="Training examples" value={String(data?.trainingExamples ?? 0)} />
-          <Metric icon={<CloudSun size={18} />} label="Live events" value={String(data?.liveEventCount ?? 0)} />
+          <Metric icon={<Sparkles size={18} />} label="City ideas" value={String(data?.cityIdeaCount ?? 0)} />
           <Metric icon={<CalendarDays size={18} />} label="Live places" value={String(data?.livePlaceCount ?? 0)} />
         </div>
 
-        <div className="resultTabs" role="tablist" aria-label="Planner result views">
+        <div className="resultsToolbar">
+          <div className="resultTabs" role="tablist" aria-label="Planner result views">
+            <button
+              aria-selected={activeResultsTab === "recommendations"}
+              className={activeResultsTab === "recommendations" ? "active" : ""}
+              role="tab"
+              type="button"
+              onClick={() => {
+                setSelectedPickId(null);
+                setActiveResultsTab("recommendations");
+              }}
+            >
+              Picks <span>{data?.suggestions.length ?? 0}</span>
+            </button>
+            <button
+              aria-selected={activeResultsTab === "events"}
+              className={activeResultsTab === "events" ? "active" : ""}
+              role="tab"
+              type="button"
+              onClick={() => {
+                setSelectedPickId(null);
+                setActiveResultsTab("events");
+              }}
+            >
+              Events <span>{data?.liveEventCount ?? 0}</span>
+            </button>
+            <button
+              aria-selected={activeResultsTab === "memory"}
+              className={activeResultsTab === "memory" ? "active" : ""}
+              role="tab"
+              type="button"
+              onClick={() => {
+                setSelectedPickId(null);
+                setActiveResultsTab("memory");
+              }}
+            >
+              Memory <span>{memory?.feedbackCount ?? 0}</span>
+            </button>
+          </div>
           <button
-            aria-selected={activeResultsTab === "recommendations"}
-            className={activeResultsTab === "recommendations" ? "active" : ""}
-            role="tab"
+            className="iconButton refreshButton"
             type="button"
+            aria-label="Refresh picks"
+            title="Refresh picks"
             onClick={() => {
               setSelectedPickId(null);
               setActiveResultsTab("recommendations");
+              void loadRecommendations();
             }}
+            disabled={loading || !hasSelectedCity}
           >
-            Picks <span>{data?.suggestions.length ?? 0}</span>
-          </button>
-          <button
-            aria-selected={activeResultsTab === "events"}
-            className={activeResultsTab === "events" ? "active" : ""}
-            role="tab"
-            type="button"
-            onClick={() => {
-              setSelectedPickId(null);
-              setActiveResultsTab("events");
-            }}
-          >
-            Events <span>{data?.liveEventCount ?? 0}</span>
-          </button>
-          <button
-            aria-selected={activeResultsTab === "memory"}
-            className={activeResultsTab === "memory" ? "active" : ""}
-            role="tab"
-            type="button"
-            onClick={() => {
-              setSelectedPickId(null);
-              setActiveResultsTab("memory");
-            }}
-          >
-            Memory <span>{memory?.feedbackCount ?? 0}</span>
+            <RefreshCw size={17} />
           </button>
         </div>
 
@@ -1214,16 +1105,19 @@ export default function Home() {
           />
         ) : activeResultsTab === "recommendations" ? (
           <div className="suggestionList" role="tabpanel">
-            {data?.suggestions.map((suggestion) => (
+            {visibleSuggestions.map((suggestion) => (
               <SuggestionCard
                 feedbackValue={feedbackState[suggestion.id]}
                 key={suggestion.id}
-                relatedPlaceCount={getRelevantPlacesForPick(suggestion, data.livePlaces).length}
+                relatedPlaceCount={getRelevantPlacesForPick(suggestion, data?.livePlaces ?? []).length}
                 suggestion={suggestion}
                 onFeedback={submitFeedback}
                 onOpenPlaces={() => setSelectedPickId(suggestion.id)}
               />
             ))}
+            {data && visibleSuggestions.length === 0 ? (
+              <p className="emptyText">No more picks in this plan. Refresh the day to get a new set.</p>
+            ) : null}
           </div>
         ) : null}
 
@@ -1391,6 +1285,7 @@ function SuggestionCard({
         <div>
           <div className="sourceRow">
             <span className="source">{suggestion.source}</span>
+            {suggestion.tags.includes("city-idea") ? <span className="ideaSource">City idea</span> : null}
             {suggestion.id.startsWith("ticketmaster-") ? <span className="eventSource">Live event</span> : null}
           </div>
           <h3>{suggestion.title}</h3>
