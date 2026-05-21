@@ -182,6 +182,7 @@ export default function Home() {
   const [deletingSuggestionId, setDeletingSuggestionId] = useState<string | null>(null);
   const [suggestionMessage, setSuggestionMessage] = useState<string | null>(null);
   const [memory, setMemory] = useState<FeedbackMemory | null>(null);
+  const [deletingMemory, setDeletingMemory] = useState(false);
   const [activeResultsTab, setActiveResultsTab] = useState<ResultsTab>("recommendations");
   const [selectedPickId, setSelectedPickId] = useState<string | null>(null);
   const [refreshingPlaces, setRefreshingPlaces] = useState(false);
@@ -382,6 +383,32 @@ export default function Home() {
     } catch (memoryError) {
       console.error(memoryError);
       setMemory(null);
+    }
+  }
+
+  async function deleteMemory() {
+    if (!userId || !window.confirm("Delete your preference memory? This clears likes and dislikes, but keeps your account and saved suggestions.")) {
+      return;
+    }
+
+    setDeletingMemory(true);
+
+    try {
+      const response = await fetch("/api/memory", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId })
+      });
+      const payload = (await response.json().catch(() => ({}))) as { memory?: FeedbackMemory; error?: string };
+      if (!response.ok || !payload.memory) throw new Error(payload.error || "Could not delete memory.");
+
+      setMemory(payload.memory);
+      setFeedbackState({});
+    } catch (memoryError) {
+      console.error(memoryError);
+      setAuthMessage(memoryError instanceof Error ? memoryError.message : "Could not delete memory.");
+    } finally {
+      setDeletingMemory(false);
     }
   }
 
@@ -1391,7 +1418,9 @@ export default function Home() {
           />
         ) : null}
 
-        {activeResultsTab === "memory" ? <MemoryPanel memory={memory} /> : null}
+        {activeResultsTab === "memory" ? (
+          <MemoryPanel deleting={deletingMemory} memory={memory} onDelete={deleteMemory} />
+        ) : null}
 
         <section className="ownedSuggestions" aria-label="Your saved suggestions">
           <div className="sectionHeader">
@@ -1476,11 +1505,20 @@ function EmptyState({ icon, title, body }: { icon: React.ReactNode; title: strin
   );
 }
 
-function MemoryPanel({ memory }: { memory: FeedbackMemory | null }) {
+function MemoryPanel({
+  deleting,
+  memory,
+  onDelete
+}: {
+  deleting: boolean;
+  memory: FeedbackMemory | null;
+  onDelete: () => void;
+}) {
   const insights = memory?.insights.length
     ? memory.insights
     : ["Like or dislike a few picks and this will start describing your preferences."];
   const recent = memory?.recent ?? [];
+  const hasMemory = (memory?.feedbackCount ?? 0) > 0;
 
   return (
     <section className="memoryPanel" aria-label="Preference memory">
@@ -1491,8 +1529,20 @@ function MemoryPanel({ memory }: { memory: FeedbackMemory | null }) {
           </span>
           <h2>{memory?.feedbackCount ? "What the model is learning" : "No feedback history yet"}</h2>
         </div>
-        <div className={memory?.modelReady ? "memoryBadge ready" : "memoryBadge"}>
-          {memory?.modelReady ? "Model active" : `${memory?.feedbackCount ?? 0}/4 signals`}
+        <div className="memoryHeaderActions">
+          <button
+            aria-label="Delete preference memory"
+            className="iconButton danger"
+            type="button"
+            title="Delete preference memory"
+            onClick={onDelete}
+            disabled={!hasMemory || deleting}
+          >
+            <Trash2 size={16} />
+          </button>
+          <div className={memory?.modelReady ? "memoryBadge ready" : "memoryBadge"}>
+            {memory?.modelReady ? "Model active" : `${memory?.feedbackCount ?? 0}/4 signals`}
+          </div>
         </div>
       </div>
 

@@ -62,6 +62,7 @@ Suggestions are stored in Postgres and loaded by `lib/suggestions.ts`. If the da
 - `POST /api/feedback` records like/dislike feedback for personalization.
 - `GET /api/suggestions` lists active suggestions and reports whether they came from Postgres or fallback demo data.
 - `GET /api/memory` summarizes recent likes/dislikes and preference patterns for the active user.
+- `DELETE /api/memory` clears preference memory for the active user.
 - `GET /api/auth/session` reads the current signed-in user, if any.
 - `POST /api/auth/signup`, `POST /api/auth/signin`, and `POST /api/auth/signout` manage optional account sessions.
 - `POST /api/auth/password-reset/request` creates a short-lived password reset link.

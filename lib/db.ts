@@ -62,6 +62,27 @@ export async function writeFeedback(record: FeedbackRecord) {
   }
 }
 
+export async function deleteFeedbackForUser(userId: string) {
+  const targetUserId = userId.trim();
+  if (!targetUserId) return 0;
+
+  const db = getPool();
+  if (!db) {
+    let deleted = 0;
+    for (let index = memoryFeedback.length - 1; index >= 0; index -= 1) {
+      if (memoryFeedback[index].userId === targetUserId) {
+        memoryFeedback.splice(index, 1);
+        deleted += 1;
+      }
+    }
+
+    return deleted;
+  }
+
+  const result = await db.query("delete from feedback where user_id = $1", [targetUserId]);
+  return result.rowCount ?? 0;
+}
+
 export async function claimFeedbackUser(fromUserId: string, toUserId: string) {
   const sourceUserId = fromUserId.trim();
   const targetUserId = toUserId.trim();

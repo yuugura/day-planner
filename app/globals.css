@@ -537,6 +537,13 @@ textarea {
   justify-content: space-between;
 }
 
+.memoryHeaderActions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
 .memoryHeader .eyebrow {
   align-items: center;
   display: flex;
