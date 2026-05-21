@@ -348,6 +348,20 @@ textarea {
   min-height: 42px;
 }
 
+.textButton,
+.resetLink {
+  align-self: flex-start;
+  background: transparent;
+  border: 0;
+  color: var(--teal);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86rem;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .primaryButton:disabled,
 .secondaryButton:disabled {
   cursor: wait;
@@ -771,6 +785,13 @@ textarea {
   display: grid;
   gap: 16px;
   padding: 18px;
+}
+
+.pickDetailActions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
 }
 
 .pickDetailHeader {

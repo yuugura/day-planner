@@ -39,6 +39,7 @@ type PlaceTemplate = {
 const allWeather: WeatherCondition[] = ["clear", "cloudy", "rain", "snow", "hot", "cold"];
 const indoorWeather: WeatherCondition[] = ["cloudy", "rain", "snow", "hot", "cold"];
 const outdoorWeather: WeatherCondition[] = ["clear", "cloudy", "cold"];
+const defaultPlaceLimit = 32;
 
 const overpassQuery = `
 [out:json][timeout:9];
@@ -53,7 +54,7 @@ const overpassQuery = `
   way(around:6000,{{lat}},{{lon}})["tourism"~"^(museum|gallery|attraction|viewpoint)$"];
   relation(around:6000,{{lat}},{{lon}})["tourism"~"^(museum|gallery|attraction|viewpoint)$"];
 );
-out center tags 45;
+out center tags 120;
 `;
 
 const overpassEndpoints = [
@@ -62,8 +63,9 @@ const overpassEndpoints = [
   "https://overpass.openstreetmap.ru/api/interpreter"
 ];
 
-export async function fetchPlaceSuggestions(place: PlaceLookup, limit = 8): Promise<Suggestion[]> {
+export async function fetchPlaceSuggestions(place: PlaceLookup, limit = defaultPlaceLimit, options: { refresh?: boolean } = {}): Promise<Suggestion[]> {
   if (!Number.isFinite(place.latitude) || !Number.isFinite(place.longitude)) return [];
+  if (options.refresh) return fetchPlaceSuggestionsUncached(place, limit);
 
   return getCached("places", placeCacheKey(place, limit), 6 * 60 * 60 * 1000, () => fetchPlaceSuggestionsUncached(place, limit));
 }
@@ -111,27 +113,84 @@ function placeCacheKey(place: PlaceLookup, limit: number) {
   });
 }
 
+function normalizePlaceName(name: string) {
+  const genericWords = new Set(["bar", "cafe", "coffee", "restaurant", "the"]);
+  const baseName = name
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, " ")
+    .split(/\s[-|/]\s/)[0];
+
+  return baseName
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 0 && !genericWords.has(word))
+    .join(" ");
+}
+
+function diversifyPlaces(suggestions: Suggestion[], limit: number) {
+  const categoriesByDistance = Array.from(new Set(
+    [...suggestions]
+      .sort((a, b) => a.distanceMiles - b.distanceMiles)
+      .map((suggestion) => suggestion.category)
+  ));
+  const suggestionsByCategory = new Map<SuggestionCategory, Suggestion[]>();
+
+  for (const category of categoriesByDistance) {
+    suggestionsByCategory.set(
+      category,
+      suggestions
+        .filter((suggestion) => suggestion.category === category)
+        .sort((a, b) => a.distanceMiles - b.distanceMiles)
+    );
+  }
+
+  const diversified: Suggestion[] = [];
+  let categoryIndex = 0;
+
+  while (diversified.length < limit && suggestionsByCategory.size > 0) {
+    const category = categoriesByDistance[categoryIndex % categoriesByDistance.length];
+    const categorySuggestions = suggestionsByCategory.get(category);
+
+    if (categorySuggestions?.length) {
+      diversified.push(categorySuggestions.shift()!);
+    }
+
+    if (categorySuggestions?.length === 0) {
+      suggestionsByCategory.delete(category);
+    }
+
+    categoryIndex += 1;
+  }
+
+  return diversified;
+}
+
 function mapOverpassElements(payload: OverpassResponse, place: PlaceLookup, limit: number): Suggestion[] {
   const seenNames = new Set<string>();
 
-  return (payload.elements ?? [])
+  const suggestions = (payload.elements ?? [])
     .map((element) => toSuggestion(element, place))
     .filter((suggestion): suggestion is Suggestion => {
       if (!suggestion) return false;
-      const normalizedName = suggestion.title.toLowerCase();
+      const normalizedName = normalizePlaceName(suggestion.title);
       if (seenNames.has(normalizedName)) return false;
       seenNames.add(normalizedName);
       return true;
-    })
-    .sort((a, b) => a.distanceMiles - b.distanceMiles)
-    .slice(0, limit);
+    });
+
+  return diversifyPlaces(suggestions, limit);
 }
 
-export async function fetchPlaceSuggestionsSafe(place?: PlaceLookup | null, limit = 8): Promise<Suggestion[]> {
+export async function fetchPlaceSuggestionsSafe(
+  place?: PlaceLookup | null,
+  limit = defaultPlaceLimit,
+  options: { refresh?: boolean } = {}
+): Promise<Suggestion[]> {
   if (!place) return [];
 
   try {
-    return await fetchPlaceSuggestions(place, limit);
+    return await fetchPlaceSuggestions(place, limit, options);
   } catch (error) {
     console.error("Skipping OpenStreetMap places after lookup failed.", error);
     return [];

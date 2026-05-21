@@ -13,11 +13,13 @@ cp .env.example .env.local
 ```bash
 DATABASE_URL="postgres://day_planner:day_planner@localhost:5433/day_planner"
 GEMINI_API_KEY="..."
+RESEND_API_KEY="..."
+RESET_EMAIL_FROM="Day Planner <reset@example.com>"
 ```
 
 The app works with in-memory demo data and fallback summary text when those variables are absent or blank. `.env.local` is ignored by Git.
 
-Account sign-up and sign-in are optional. Anonymous planning still works without Postgres, but real email/password accounts and cross-device personalization require `DATABASE_URL` because sessions, users, suggestions, and feedback are stored there.
+Account sign-up and sign-in are optional. Anonymous planning still works without Postgres, but real email/password accounts and cross-device personalization require `DATABASE_URL` because sessions, users, suggestions, and feedback are stored there. Password reset emails use Resend when `RESEND_API_KEY` and `RESET_EMAIL_FROM` are configured; development reset links are shown in the UI when email is not configured.
 
 ## Local Postgres
 
@@ -62,6 +64,8 @@ Suggestions are stored in Postgres and loaded by `lib/suggestions.ts`. If the da
 - `GET /api/memory` summarizes recent likes/dislikes and preference patterns for the active user.
 - `GET /api/auth/session` reads the current signed-in user, if any.
 - `POST /api/auth/signup`, `POST /api/auth/signin`, and `POST /api/auth/signout` manage optional account sessions.
+- `POST /api/auth/password-reset/request` creates a short-lived password reset link.
+- `POST /api/auth/password-reset/confirm` resets the password and starts a new session.
 - `POST /api/auth/claim` migrates anonymous suggestions and feedback into the signed-in account.
 - `GET /api/cities?query=Tor` returns city autocomplete options from Open-Meteo geocoding.
 - `GET /api/weather?city=Toronto` fetches current city weather using Open-Meteo and maps it into the recommender's weather buckets.

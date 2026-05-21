@@ -119,6 +119,100 @@ describe("fetchPlaceSuggestions", () => {
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0].title).toBe("Market Hall");
   });
+
+  it("deduplicates formatted variants of the same place name", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          elements: [
+            {
+              type: "node",
+              id: 1,
+              lat: 43.653,
+              lon: -79.383,
+              tags: { name: "Bean House Cafe", amenity: "cafe" }
+            },
+            {
+              type: "way",
+              id: 2,
+              center: { lat: 43.654, lon: -79.384 },
+              tags: { name: "Bean House - Queen Street", amenity: "cafe" }
+            }
+          ]
+        })
+      })
+    );
+
+    const suggestions = await fetchPlaceSuggestions({
+      city: "Toronto",
+      latitude: 43.6532,
+      longitude: -79.3832
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].title).toBe("Bean House Cafe");
+  });
+
+  it("diversifies nearby places across categories before applying the limit", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          elements: [
+            {
+              type: "node",
+              id: 1,
+              lat: 43.653,
+              lon: -79.383,
+              tags: { name: "Near Cafe 1", amenity: "cafe" }
+            },
+            {
+              type: "node",
+              id: 2,
+              lat: 43.6531,
+              lon: -79.3831,
+              tags: { name: "Near Cafe 2", amenity: "cafe" }
+            },
+            {
+              type: "node",
+              id: 3,
+              lat: 43.6532,
+              lon: -79.3832,
+              tags: { name: "Near Cafe 3", amenity: "cafe" }
+            },
+            {
+              type: "node",
+              id: 4,
+              lat: 43.66,
+              lon: -79.39,
+              tags: { name: "City Museum", tourism: "museum" }
+            },
+            {
+              type: "node",
+              id: 5,
+              lat: 43.67,
+              lon: -79.4,
+              tags: { name: "Riverside Park", leisure: "park" }
+            }
+          ]
+        })
+      })
+    );
+
+    const suggestions = await fetchPlaceSuggestions(
+      {
+        city: "Toronto",
+        latitude: 43.6532,
+        longitude: -79.3832
+      },
+      3
+    );
+
+    expect(suggestions.map((suggestion) => suggestion.category)).toEqual(["food", "culture", "outdoors"]);
+  });
 });
 
 describe("fetchPlaceSuggestionsSafe", () => {

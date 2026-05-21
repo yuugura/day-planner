@@ -56,7 +56,7 @@ type PlannerResponse = {
 type TemperatureUnit = "fahrenheit" | "celsius";
 type ResultsTab = "recommendations" | "events" | "memory";
 type LocationMode = "area" | "current";
-type AuthMode = "signin" | "signup";
+type AuthMode = "signin" | "signup" | "reset-request" | "reset-confirm";
 type LoadingStage = "idle" | "weather" | "places" | "events" | "ideas" | "ranking";
 type AuthUser = {
   id: string;
@@ -161,6 +161,8 @@ export default function Home() {
   const [authMode, setAuthMode] = useState<AuthMode>("signin");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [authResetToken, setAuthResetToken] = useState("");
+  const [authResetUrl, setAuthResetUrl] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [weatherReport, setWeatherReport] = useState<WeatherReport | null>(null);
@@ -182,6 +184,8 @@ export default function Home() {
   const [memory, setMemory] = useState<FeedbackMemory | null>(null);
   const [activeResultsTab, setActiveResultsTab] = useState<ResultsTab>("recommendations");
   const [selectedPickId, setSelectedPickId] = useState<string | null>(null);
+  const [refreshingPlaces, setRefreshingPlaces] = useState(false);
+  const [placesMessage, setPlacesMessage] = useState<string | null>(null);
 
   const topSuggestion = data?.suggestions[0];
   const visibleSuggestions =
@@ -309,6 +313,49 @@ export default function Home() {
     });
   }
 
+  async function refreshNearbyPlaces() {
+    const referenceArea = getActiveReferenceArea();
+    if (!referenceArea || !data) return;
+
+    setRefreshingPlaces(true);
+    setPlacesMessage(null);
+
+    try {
+      const response = await fetch("/api/places", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          refresh: true,
+          city: referenceArea.displayName || referenceArea.name,
+          latitude: referenceArea.latitude,
+          longitude: referenceArea.longitude
+        })
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        livePlaces?: Suggestion[];
+        livePlaceCount?: number;
+        error?: string;
+      };
+      if (!response.ok || !payload.livePlaces) throw new Error(payload.error || "Could not refresh nearby options.");
+
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              livePlaces: payload.livePlaces ?? [],
+              livePlaceCount: payload.livePlaceCount ?? payload.livePlaces?.length ?? 0
+            }
+          : current
+      );
+      setPlacesMessage(`Updated nearby options (${payload.livePlaceCount ?? payload.livePlaces.length}).`);
+    } catch (placesError) {
+      console.error(placesError);
+      setPlacesMessage(placesError instanceof Error ? placesError.message : "Could not refresh nearby options.");
+    } finally {
+      setRefreshingPlaces(false);
+    }
+  }
+
   async function loadSuggestionCatalog(nextUserId = userId) {
     if (!nextUserId) return;
 
@@ -434,7 +481,17 @@ export default function Home() {
     }
 
     if (currentLocationArea) {
+      setSelectedPickId(null);
+      setActiveResultsTab("recommendations");
       setLocationMessage("Nearby options use your current location.");
+      if (currentLocationArea.name !== "Current location") {
+        const nextContext = { ...context, city: currentLocationArea.name };
+        setSelectedCity(currentLocationArea);
+        setContext(nextContext);
+        void loadRecommendations(nextContext, userId, currentLocationArea, currentLocationArea);
+      } else {
+        void loadRecommendations(context, userId, selectedCity, currentLocationArea);
+      }
       return;
     }
 
@@ -452,17 +509,7 @@ export default function Home() {
     setLocationMessage("Waiting for location permission...");
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const locationArea: CitySearchResult = {
-          id: `browser-${position.coords.latitude},${position.coords.longitude}`,
-          name: "Current location",
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          displayName: "Current location"
-        };
-        setCurrentLocationArea(locationArea);
-        setLocationMode("current");
-        setLocationMessage("Nearby options now use your current location.");
-        setRequestingLocation(false);
+        void activateBrowserLocation(position.coords.latitude, position.coords.longitude);
       },
       (locationError) => {
         setLocationMessage(
@@ -479,6 +526,43 @@ export default function Home() {
         timeout: 10000
       }
     );
+  }
+
+  async function activateBrowserLocation(latitude: number, longitude: number) {
+    const fallbackArea: CitySearchResult = {
+      id: `browser-${latitude},${longitude}`,
+      name: "Current location",
+      latitude,
+      longitude,
+      displayName: "Current location"
+    };
+
+    try {
+      setLocationMessage("Resolving your current city...");
+      const response = await fetch(`/api/location/reverse?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`);
+      if (!response.ok) throw new Error("Could not resolve current city.");
+
+      const payload = (await response.json()) as { city?: CitySearchResult };
+      if (!payload.city) throw new Error("Could not resolve current city.");
+
+      const nextContext = { ...context, city: payload.city.name };
+      setCurrentLocationArea(payload.city);
+      setSelectedCity(payload.city);
+      setLocationMode("current");
+      setSelectedPickId(null);
+      setActiveResultsTab("recommendations");
+      setContext(nextContext);
+      setLocationMessage(`Current location resolved to ${payload.city.displayName}.`);
+      void loadRecommendations(nextContext, userId, payload.city, payload.city);
+    } catch (locationError) {
+      console.error(locationError);
+      setCurrentLocationArea(fallbackArea);
+      setLocationMode("current");
+      setLocationMessage("Nearby options now use your current location, but the selected city could not be updated.");
+      void loadRecommendations(context, userId, selectedCity, fallbackArea);
+    } finally {
+      setRequestingLocation(false);
+    }
   }
 
   function getActiveReferenceArea() {
@@ -503,6 +587,15 @@ export default function Home() {
   }
 
   async function submitAuth(mode: AuthMode = authMode) {
+    if (mode === "reset-request") {
+      await requestPasswordReset();
+      return;
+    }
+    if (mode === "reset-confirm") {
+      await confirmPasswordReset();
+      return;
+    }
+
     const nextAnonymousUserId = anonymousUserId || userId;
     setAuthLoading(true);
     setAuthMessage(null);
@@ -517,9 +610,12 @@ export default function Home() {
       if (!response.ok || !payload.user) throw new Error(payload.error || "Could not sign in.");
 
       setAuthUser(payload.user);
+      setAuthMode("signin");
       setUserId(payload.user.id);
       setDismissedPickIds(loadNotTodaySkips(payload.user.id));
       setAuthPassword("");
+      setAuthResetToken("");
+      setAuthResetUrl(null);
       setSuggestionMessage(null);
       setAuthMessage(mode === "signup" ? `Account created for ${payload.user.email}.` : `Signed in as ${payload.user.email}.`);
       if (nextAnonymousUserId) await claimAnonymousData(nextAnonymousUserId, payload.user);
@@ -528,6 +624,65 @@ export default function Home() {
       if (hasSelectedCity) await loadRecommendations(context, payload.user.id, selectedCity);
     } catch (authError) {
       setAuthMessage(authError instanceof Error ? authError.message : "Could not sign in.");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function requestPasswordReset() {
+    setAuthLoading(true);
+    setAuthMessage(null);
+    setAuthResetUrl(null);
+
+    try {
+      const response = await fetch("/api/auth/password-reset/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: authEmail })
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        message?: string;
+        resetUrl?: string;
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error || "Could not start password reset.");
+
+      setAuthResetUrl(payload.resetUrl ?? null);
+      setAuthMessage(payload.message || "If an account exists for that email, a reset link has been sent.");
+    } catch (resetError) {
+      setAuthMessage(resetError instanceof Error ? resetError.message : "Could not start password reset.");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function confirmPasswordReset() {
+    setAuthLoading(true);
+    setAuthMessage(null);
+
+    try {
+      const response = await fetch("/api/auth/password-reset/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: authResetToken, password: authPassword })
+      });
+      const payload = (await response.json().catch(() => ({}))) as { user?: AuthUser; error?: string };
+      if (!response.ok || !payload.user) throw new Error(payload.error || "Could not reset password.");
+
+      setAuthUser(payload.user);
+      setAuthMode("signin");
+      setUserId(payload.user.id);
+      setDismissedPickIds(loadNotTodaySkips(payload.user.id));
+      setAuthPassword("");
+      setAuthResetToken("");
+      setAuthResetUrl(null);
+      setAuthMessage(`Password reset. Signed in as ${payload.user.email}.`);
+      await loadSuggestionCatalog(payload.user.id);
+      await loadMemory(payload.user.id);
+      if (hasSelectedCity) await loadRecommendations(context, payload.user.id, selectedCity);
+      window.history.replaceState(null, "", window.location.pathname);
+    } catch (resetError) {
+      setAuthMessage(resetError instanceof Error ? resetError.message : "Could not reset password.");
     } finally {
       setAuthLoading(false);
     }
@@ -558,6 +713,13 @@ export default function Home() {
 
   useEffect(() => {
     async function initializePlanner() {
+      const resetToken = new URLSearchParams(window.location.search).get("resetToken");
+      if (resetToken) {
+        setAuthMode("reset-confirm");
+        setAuthResetToken(resetToken);
+        setAuthMessage("Enter a new password to finish resetting your account.");
+      }
+
       const existingUserId = window.localStorage.getItem(userStorageKey);
       const nextUserId = existingUserId || window.crypto.randomUUID();
       const savedTemperatureUnit = window.localStorage.getItem(temperatureUnitStorageKey);
@@ -679,42 +841,96 @@ export default function Home() {
                 <button
                   className={authMode === "signin" ? "active" : ""}
                   type="button"
-                  onClick={() => setAuthMode("signin")}
+                  onClick={() => {
+                    setAuthMode("signin");
+                    setAuthMessage(null);
+                    setAuthResetUrl(null);
+                  }}
                 >
                   Sign in
                 </button>
                 <button
                   className={authMode === "signup" ? "active" : ""}
                   type="button"
-                  onClick={() => setAuthMode("signup")}
+                  onClick={() => {
+                    setAuthMode("signup");
+                    setAuthMessage(null);
+                    setAuthResetUrl(null);
+                  }}
                 >
                   Create account
                 </button>
               </div>
-              <label className="field">
-                <span>Email</span>
-                <input
-                  autoComplete="email"
-                  inputMode="email"
-                  value={authEmail}
-                  onChange={(event) => setAuthEmail(event.target.value)}
-                  placeholder="you@example.com"
-                />
-              </label>
-              <label className="field">
-                <span>Password</span>
-                <input
-                  autoComplete={authMode === "signin" ? "current-password" : "new-password"}
-                  type="password"
-                  value={authPassword}
-                  onChange={(event) => setAuthPassword(event.target.value)}
-                  placeholder="8+ characters"
-                />
-              </label>
+              {authMode === "reset-confirm" ? null : (
+                <label className="field">
+                  <span>Email</span>
+                  <input
+                    autoComplete="email"
+                    inputMode="email"
+                    value={authEmail}
+                    onChange={(event) => setAuthEmail(event.target.value)}
+                    placeholder="you@example.com"
+                  />
+                </label>
+              )}
+              {authMode === "reset-request" ? null : (
+                <label className="field">
+                  <span>{authMode === "reset-confirm" ? "New password" : "Password"}</span>
+                  <input
+                    autoComplete={authMode === "signin" ? "current-password" : "new-password"}
+                    type="password"
+                    value={authPassword}
+                    onChange={(event) => setAuthPassword(event.target.value)}
+                    placeholder="8+ characters"
+                  />
+                </label>
+              )}
               <button className="secondaryButton" type="button" onClick={() => submitAuth()} disabled={authLoading}>
                 <LogIn size={17} />
-                {authLoading ? "Working..." : authMode === "signin" ? "Sign in" : "Create account"}
+                {authLoading
+                  ? "Working..."
+                  : authMode === "signup"
+                    ? "Create account"
+                    : authMode === "reset-request"
+                      ? "Send reset link"
+                      : authMode === "reset-confirm"
+                        ? "Reset password"
+                        : "Sign in"}
               </button>
+              {authMode === "signin" ? (
+                <button
+                  className="textButton"
+                  type="button"
+                  onClick={() => {
+                    setAuthMode("reset-request");
+                    setAuthPassword("");
+                    setAuthMessage(null);
+                  }}
+                >
+                  Forgot password?
+                </button>
+              ) : null}
+              {authMode === "reset-request" || authMode === "reset-confirm" ? (
+                <button
+                  className="textButton"
+                  type="button"
+                  onClick={() => {
+                    setAuthMode("signin");
+                    setAuthPassword("");
+                    setAuthResetToken("");
+                    setAuthResetUrl(null);
+                    setAuthMessage(null);
+                    window.history.replaceState(null, "", window.location.pathname);
+                  }}
+                >
+                  Back to sign in
+                </button>
+              ) : null}
+              {authResetUrl ? (
+                <a className="resetLink" href={authResetUrl}>
+                  Open development reset link
+                </a>
+              ) : null}
             </>
           )}
           <div className="statusLine" role="status">
@@ -1137,8 +1353,11 @@ export default function Home() {
 
         {selectedPick ? (
           <PickDetailView
+            message={placesMessage}
+            onRefreshPlaces={refreshNearbyPlaces}
             pick={selectedPick}
             places={getRelevantPlacesForPick(selectedPick, data?.livePlaces ?? [])}
+            refreshing={refreshingPlaces}
             onBack={() => setSelectedPickId(null)}
           />
         ) : activeResultsTab === "recommendations" ? (
@@ -1388,20 +1607,38 @@ function SuggestionCard({
 }
 
 function PickDetailView({
+  message,
+  onRefreshPlaces,
   pick,
   places,
+  refreshing,
   onBack
 }: {
+  message: string | null;
+  onRefreshPlaces: () => void;
   pick: ScoredSuggestion;
   places: Suggestion[];
+  refreshing: boolean;
   onBack: () => void;
 }) {
   return (
     <section className="pickDetail" role="tabpanel">
-      <button className="backButton" type="button" onClick={onBack}>
-        <ArrowLeft size={16} />
-        Back to picks
-      </button>
+      <div className="pickDetailActions">
+        <button className="backButton" type="button" onClick={onBack}>
+          <ArrowLeft size={16} />
+          Back to picks
+        </button>
+        <button
+          aria-label="Refresh nearby options"
+          className="iconButton"
+          type="button"
+          title="Refresh nearby options"
+          onClick={onRefreshPlaces}
+          disabled={refreshing}
+        >
+          <RefreshCw size={17} />
+        </button>
+      </div>
       <div className="pickDetailHeader">
         <div>
           <span className="eyebrow">Nearby options for</span>
@@ -1410,6 +1647,11 @@ function PickDetailView({
         <span className="pill">{places.length}</span>
       </div>
       <p>{pick.description}</p>
+      {message || refreshing ? (
+        <div className="locationMessage" role="status">
+          {refreshing ? "Refreshing nearby options..." : message}
+        </div>
+      ) : null}
       {places.length > 0 ? (
         <LiveSuggestionList
           emptyText="No matching places found for this pick."
