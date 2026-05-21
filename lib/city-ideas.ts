@@ -26,6 +26,13 @@ export type CityIdeaDraft = {
   source: Suggestion["source"];
 };
 
+export type CityIdeaStatus = "memory-cache" | "persistent-cache" | "grounded" | "fallback";
+
+export type CityIdeaResult = {
+  drafts: CityIdeaDraft[];
+  status: CityIdeaStatus;
+};
+
 const categories: SuggestionCategory[] = ["outdoors", "culture", "food", "fitness", "social", "productive", "creative", "rest"];
 const costs: CostLevel[] = ["free", "low", "medium", "high"];
 const energies: EnergyLevel[] = ["low", "medium", "high"];
@@ -39,13 +46,27 @@ type CityIdeaCacheRow = {
 };
 
 export async function generateCityIdeaDrafts(context: DayContext): Promise<CityIdeaDraft[]> {
-  return getCached("city-ideas", cityIdeasCacheKey(context), 6 * 60 * 60 * 1000, () => generateCityIdeaDraftsUncached(context));
+  const result = await generateCityIdeaResult(context);
+  return result.drafts;
 }
 
-async function generateCityIdeaDraftsUncached(context: DayContext): Promise<CityIdeaDraft[]> {
+export async function generateCityIdeaResult(context: DayContext): Promise<CityIdeaResult> {
+  const cacheKey = cityIdeasCacheKey(context);
+  let loadedFresh = false;
+  const cachedResult = await getCached("city-ideas", cacheKey, 6 * 60 * 60 * 1000, async () => {
+    loadedFresh = true;
+    return generateCityIdeaResultUncached(context);
+  });
+
+  return !loadedFresh && (cachedResult.status === "persistent-cache" || cachedResult.status === "grounded" || cachedResult.status === "fallback")
+    ? { ...cachedResult, status: "memory-cache" }
+    : cachedResult;
+}
+
+async function generateCityIdeaResultUncached(context: DayContext): Promise<CityIdeaResult> {
   const cacheKey = cityIdeasCacheKey(context);
   const cachedDrafts = await readPersistentCityIdeaCache(cacheKey);
-  if (cachedDrafts) return cachedDrafts;
+  if (cachedDrafts) return { drafts: cachedDrafts, status: "persistent-cache" };
 
   try {
     const text = await generateGroundedContent(
@@ -58,14 +79,14 @@ Return only JSON with this shape:
 {"suggestions":[{"title":"...","category":"outdoors|culture|food|fitness|social|productive|creative|rest","description":"...","locationLabel":"...","cost":"free|low|medium|high","distanceMiles":1.5,"durationHours":1.25,"energy":"low|medium|high","social":"solo|pair|group|flexible","weatherFit":["clear"],"tags":["midday","food"],"source":"city|event|everyday|productive"}]}
 Descriptions should be specific enough to feel city-aware, but generic enough that OpenStreetMap or Ticketmaster can supply concrete places later.`
     );
-    if (!text) return fallbackCityIdeas(context);
+    if (!text) return { drafts: fallbackCityIdeas(context), status: "fallback" };
 
     const drafts = normalizeDrafts(extractJson(text)).slice(0, 8);
     await writePersistentCityIdeaCache(cacheKey, context, drafts);
-    return drafts;
+    return { drafts, status: "grounded" };
   } catch (error) {
     console.error("Falling back to local city ideas after Gemini failed.", error);
-    return fallbackCityIdeas(context);
+    return { drafts: fallbackCityIdeas(context), status: "fallback" };
   }
 }
 

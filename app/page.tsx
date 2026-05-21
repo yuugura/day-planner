@@ -5,7 +5,6 @@ import {
   Bike,
   ArrowLeft,
   Brain,
-  BriefcaseBusiness,
   CalendarDays,
   CloudSun,
   Coffee,
@@ -19,6 +18,7 @@ import {
   RefreshCw,
   Save,
   Send,
+  SkipForward,
   Sparkles,
   Thermometer,
   ThumbsDown,
@@ -48,6 +48,7 @@ type PlannerResponse = {
   liveEvents: Suggestion[];
   trainingExamples: number;
   cityIdeaCount: number;
+  cityIdeaStatus?: "memory-cache" | "persistent-cache" | "grounded" | "fallback";
   livePlaceCount: number;
   liveEventCount: number;
 };
@@ -56,6 +57,7 @@ type TemperatureUnit = "fahrenheit" | "celsius";
 type ResultsTab = "recommendations" | "events" | "memory";
 type LocationMode = "area" | "current";
 type AuthMode = "signin" | "signup";
+type LoadingStage = "idle" | "weather" | "places" | "events" | "ideas" | "ranking";
 type AuthUser = {
   id: string;
   email: string;
@@ -90,6 +92,10 @@ type SuggestionForm = {
   tags: string;
   source: Suggestion["source"];
 };
+type StoredNotTodaySkips = {
+  date: string;
+  ids: string[];
+};
 
 const tagOptions = ["fresh-air", "food", "focus", "art", "movement", "connection", "creative", "low-planning"];
 const categoryOptions: SuggestionCategory[] = ["outdoors", "culture", "food", "fitness", "social", "productive", "creative", "rest"];
@@ -107,7 +113,9 @@ const availableHourOptions = [
 ];
 const userStorageKey = "day-planner-user-id";
 const temperatureUnitStorageKey = "day-planner-temperature-unit";
+const notTodaySkipsStoragePrefix = "day-planner-not-today-skips";
 const visiblePickCount = 4;
+const planningLoadingStages: LoadingStage[] = ["weather", "places", "events", "ideas", "ranking"];
 
 const initialContext: DayContext = {
   city: "Toronto",
@@ -142,6 +150,7 @@ export default function Home() {
   const [context, setContext] = useState<DayContext>(initialContext);
   const [data, setData] = useState<PlannerResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingStage, setLoadingStage] = useState<LoadingStage>("idle");
   const [lastPlannedAt, setLastPlannedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [feedbackState, setFeedbackState] = useState<Record<string, boolean>>({});
@@ -184,6 +193,21 @@ export default function Home() {
     weatherReport ? weatherReport.temperatureF : context.temperatureF,
     temperatureUnit
   );
+  const loadingMessage = loading ? getPlanningLoadingMessage(loadingStage, selectedCity?.name || context.city) : null;
+
+  useEffect(() => {
+    if (!loading) return;
+
+    const intervalId = window.setInterval(() => {
+      setLoadingStage((currentStage) => {
+        const currentIndex = planningLoadingStages.indexOf(currentStage);
+        const nextIndex = currentIndex < 0 ? 0 : Math.min(currentIndex + 1, planningLoadingStages.length - 1);
+        return planningLoadingStages[nextIndex];
+      });
+    }, 1800);
+
+    return () => window.clearInterval(intervalId);
+  }, [loading]);
 
   async function loadRecommendations(
     nextContext = context,
@@ -199,6 +223,7 @@ export default function Home() {
     }
 
     setLoading(true);
+    setLoadingStage("weather");
     setError(null);
 
     try {
@@ -221,6 +246,7 @@ export default function Home() {
         timeZone: weatherPayload.weather.timeZone
       };
       setWeatherReport(weatherPayload.weather);
+      setLoadingStage("places");
 
       const response = await fetch("/api/recommend", {
         method: "POST",
@@ -241,8 +267,9 @@ export default function Home() {
       }
 
       const payload = (await response.json()) as PlannerResponse;
+      setLoadingStage("ranking");
       setData(payload);
-      if (options.resetDismissed ?? true) setDismissedPickIds([]);
+      if (options.resetDismissed ?? true) setDismissedPickIds(loadNotTodaySkips(nextUserId));
       setContext(payload.context);
       setLastPlannedAt(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }));
     } catch (requestError) {
@@ -250,13 +277,14 @@ export default function Home() {
       setError(requestError instanceof Error ? requestError.message : "Could not refresh recommendations.");
     } finally {
       setLoading(false);
+      setLoadingStage("idle");
     }
   }
 
   async function submitFeedback(suggestion: ScoredSuggestion, liked: boolean) {
     setFeedbackState((current) => ({ ...current, [suggestion.id]: liked }));
     if (!liked) {
-      setDismissedPickIds((current) => (current.includes(suggestion.id) ? current : [...current, suggestion.id]));
+      addDismissedPick(suggestion.id);
       if (selectedPickId === suggestion.id) setSelectedPickId(null);
     }
     await fetch("/api/feedback", {
@@ -266,6 +294,19 @@ export default function Home() {
     });
     void loadRecommendations(context, userId, selectedCity, getActiveReferenceArea(), { resetDismissed: false });
     await loadMemory();
+  }
+
+  function skipSuggestion(suggestion: ScoredSuggestion) {
+    addDismissedPick(suggestion.id);
+    if (selectedPickId === suggestion.id) setSelectedPickId(null);
+  }
+
+  function addDismissedPick(suggestionId: string) {
+    setDismissedPickIds((current) => {
+      const next = current.includes(suggestionId) ? current : [...current, suggestionId];
+      saveNotTodaySkips(next, userId);
+      return next;
+    });
   }
 
   async function loadSuggestionCatalog(nextUserId = userId) {
@@ -477,6 +518,7 @@ export default function Home() {
 
       setAuthUser(payload.user);
       setUserId(payload.user.id);
+      setDismissedPickIds(loadNotTodaySkips(payload.user.id));
       setAuthPassword("");
       setSuggestionMessage(null);
       setAuthMessage(mode === "signup" ? `Account created for ${payload.user.email}.` : `Signed in as ${payload.user.email}.`);
@@ -503,6 +545,7 @@ export default function Home() {
       window.localStorage.setItem(userStorageKey, nextUserId);
       setAnonymousUserId(nextUserId);
       setUserId(nextUserId);
+      setDismissedPickIds(loadNotTodaySkips(nextUserId));
       setSuggestionMessage(null);
       setAuthMessage("Signed out. Anonymous mode is active.");
       await loadSuggestionCatalog(nextUserId);
@@ -533,6 +576,7 @@ export default function Home() {
       }
 
       setUserId(activeUserId);
+      setDismissedPickIds(loadNotTodaySkips(activeUserId));
       void loadSuggestionCatalog(activeUserId);
       void loadMemory(activeUserId);
       if (savedTemperatureUnit === "fahrenheit" || savedTemperatureUnit === "celsius") {
@@ -870,7 +914,7 @@ export default function Home() {
         </button>
         <div className="statusLine" role="status">
           <Clock3 size={15} />
-          {error || (lastPlannedAt ? `Last planned at ${lastPlannedAt}` : "Ready to plan")}
+          {error || loadingMessage || (lastPlannedAt ? `Last planned at ${lastPlannedAt}` : "Ready to plan")}
         </div>
 
         <section className="suggestionBuilder" aria-label="Create or edit suggestion">
@@ -1033,13 +1077,7 @@ export default function Home() {
 
         <div className="summaryStrip">
           <Coffee size={18} />
-          <p>{data?.summary || "Recommendations will adapt as you tune the day and give feedback."}</p>
-        </div>
-
-        <div className="insightGrid">
-          <Metric icon={<BriefcaseBusiness size={18} />} label="Training examples" value={String(data?.trainingExamples ?? 0)} />
-          <Metric icon={<Sparkles size={18} />} label="City ideas" value={String(data?.cityIdeaCount ?? 0)} />
-          <Metric icon={<CalendarDays size={18} />} label="Live places" value={String(data?.livePlaceCount ?? 0)} />
+          <p>{loadingMessage || data?.summary || "Recommendations will adapt as you tune the day and give feedback."}</p>
         </div>
 
         <div className="resultsToolbar">
@@ -1113,10 +1151,15 @@ export default function Home() {
                 suggestion={suggestion}
                 onFeedback={submitFeedback}
                 onOpenPlaces={() => setSelectedPickId(suggestion.id)}
+                onSkip={() => skipSuggestion(suggestion)}
               />
             ))}
             {data && visibleSuggestions.length === 0 ? (
-              <p className="emptyText">No more picks in this plan. Refresh the day to get a new set.</p>
+              <EmptyState
+                icon={<SkipForward size={18} />}
+                title="No more picks for today"
+                body="You have skipped or disliked the visible picks. Change the plan details for a different angle, or check again tomorrow."
+              />
             ) : null}
           </div>
         ) : null}
@@ -1202,12 +1245,14 @@ function SelectField({
   );
 }
 
-function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function EmptyState({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
   return (
-    <div className="metric">
-      {icon}
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div className="emptyState" role="status">
+      <span className="emptyStateIcon">{icon}</span>
+      <div>
+        <strong>{title}</strong>
+        <p>{body}</p>
+      </div>
     </div>
   );
 }
@@ -1271,13 +1316,15 @@ function SuggestionCard({
   feedbackValue,
   relatedPlaceCount,
   onFeedback,
-  onOpenPlaces
+  onOpenPlaces,
+  onSkip
 }: {
   suggestion: ScoredSuggestion;
   feedbackValue: boolean | undefined;
   relatedPlaceCount: number;
   onFeedback: (suggestion: ScoredSuggestion, liked: boolean) => void;
   onOpenPlaces: () => void;
+  onSkip: () => void;
 }) {
   return (
     <article className="suggestionCard">
@@ -1310,6 +1357,15 @@ function SuggestionCard({
         </button>
       ) : null}
       <div className="feedbackRow">
+        <button
+          aria-label={`Skip ${suggestion.title}`}
+          className="iconButton"
+          type="button"
+          title="Skip for today"
+          onClick={onSkip}
+        >
+          <SkipForward size={17} />
+        </button>
         <button
           aria-label={`Like ${suggestion.title}`}
           className={feedbackValue === true ? "iconButton active" : "iconButton"}
@@ -1451,6 +1507,69 @@ function formatTemperature(temperatureF: number, unit: TemperatureUnit) {
 function updateTemperatureUnit(unit: TemperatureUnit, setTemperatureUnit: (unit: TemperatureUnit) => void) {
   setTemperatureUnit(unit);
   window.localStorage.setItem(temperatureUnitStorageKey, unit);
+}
+
+function getPlanningLoadingMessage(stage: LoadingStage, city: string) {
+  const cityLabel = city.trim() || "your city";
+
+  switch (stage) {
+    case "weather":
+      return `Checking weather in ${cityLabel}...`;
+    case "places":
+      return "Finding live places nearby...";
+    case "events":
+      return "Looking for events that fit today...";
+    case "ideas":
+      return "Generating fresh city ideas...";
+    case "ranking":
+      return "Ranking today's best picks...";
+    default:
+      return "Planning your day...";
+  }
+}
+
+function loadNotTodaySkips(userId: string | null) {
+  if (!userId) return [];
+
+  const storageKey = getNotTodaySkipsStorageKey(userId);
+  const today = getLocalDateKey();
+  const storedValue = window.localStorage.getItem(storageKey);
+  if (!storedValue) return [];
+
+  try {
+    const stored = JSON.parse(storedValue) as StoredNotTodaySkips;
+    if (stored.date !== today) {
+      window.localStorage.removeItem(storageKey);
+      return [];
+    }
+
+    return Array.isArray(stored.ids) ? stored.ids.filter((id) => typeof id === "string") : [];
+  } catch {
+    window.localStorage.removeItem(storageKey);
+    return [];
+  }
+}
+
+function saveNotTodaySkips(ids: string[], userId: string | null) {
+  if (!userId) return;
+
+  const uniqueIds = Array.from(new Set(ids));
+  const payload: StoredNotTodaySkips = {
+    date: getLocalDateKey(),
+    ids: uniqueIds
+  };
+  window.localStorage.setItem(getNotTodaySkipsStorageKey(userId), JSON.stringify(payload));
+}
+
+function getNotTodaySkipsStorageKey(userId: string) {
+  return `${notTodaySkipsStoragePrefix}:${userId}`;
+}
+
+function getLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function formatLocalTime(weather: WeatherReport) {

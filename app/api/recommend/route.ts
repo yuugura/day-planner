@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { resolvePersonalizationUserId } from "@/lib/auth";
-import { cityIdeaDraftsToSuggestions, generateCityIdeaDrafts } from "@/lib/city-ideas";
+import { cityIdeaDraftsToSuggestions, generateCityIdeaResult } from "@/lib/city-ideas";
 import { readFeedback } from "@/lib/db";
 import { fetchEventSuggestionsSafe } from "@/lib/events";
 import { summarizePlan } from "@/lib/gemini";
@@ -36,14 +36,19 @@ export async function POST(request: Request) {
   };
   const userId = await resolvePersonalizationUserId(request, body.userId);
   const placeLookup = normalizePlaceLookup(body.place, context.city);
-  const [feedback, availableSuggestions, cityIdeaDrafts, placeSuggestions, eventSuggestions] = await Promise.all([
+  const [feedback, availableSuggestions, cityIdeaResult, placeSuggestions, eventSuggestions] = await Promise.all([
     readFeedback(userId),
     readSuggestions(userId),
-    generateCityIdeaDrafts(context),
+    generateCityIdeaResult(context),
     fetchPlaceSuggestionsSafe(placeLookup),
     fetchEventSuggestionsSafe(placeLookup)
   ]);
-  const cityIdeaSuggestions = cityIdeaDraftsToSuggestions(context, cityIdeaDrafts);
+  const cityIdeaSuggestions = cityIdeaDraftsToSuggestions(context, cityIdeaResult.drafts);
+  console.info("City ideas source", {
+    city: context.city,
+    status: cityIdeaResult.status,
+    count: cityIdeaSuggestions.length
+  });
   const suggestions = rankSuggestions([...availableSuggestions, ...cityIdeaSuggestions], context, feedback);
   const summary = await summarizePlan(context, suggestions).catch(() => "");
 
@@ -55,6 +60,7 @@ export async function POST(request: Request) {
     liveEvents: eventSuggestions,
     trainingExamples: feedback.length,
     cityIdeaCount: cityIdeaSuggestions.length,
+    cityIdeaStatus: cityIdeaResult.status,
     livePlaceCount: placeSuggestions.length,
     liveEventCount: eventSuggestions.length
   });

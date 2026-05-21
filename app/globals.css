@@ -77,7 +77,6 @@ h1 {
 .brandRow p,
 .field span,
 .eyebrow,
-.metric span,
 .source,
 .eventSource,
 .ideaSource,
@@ -508,27 +507,6 @@ textarea {
   color: #4f4428;
 }
 
-.insightGrid {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.metric {
-  background: rgba(255, 255, 255, 0.76);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  display: grid;
-  gap: 8px;
-  min-height: 112px;
-  padding: 16px;
-}
-
-.metric strong {
-  font-size: 1.05rem;
-  overflow-wrap: anywhere;
-}
-
 .memoryPanel {
   background: rgba(255, 255, 255, 0.76);
   border: 1px solid var(--line);
@@ -748,6 +726,42 @@ textarea {
   border-radius: 8px;
   color: var(--muted);
   padding: 18px;
+}
+
+.emptyState {
+  align-items: flex-start;
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px dashed rgba(100, 107, 97, 0.38);
+  border-radius: 8px;
+  color: #4d534a;
+  display: flex;
+  gap: 12px;
+  padding: 18px;
+}
+
+.emptyStateIcon {
+  align-items: center;
+  background: rgba(219, 233, 216, 0.72);
+  border-radius: 8px;
+  color: var(--leaf);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.emptyState strong {
+  color: var(--ink);
+  display: block;
+  font-size: 0.98rem;
+  line-height: 1.25;
+}
+
+.emptyState p {
+  color: #4d534a;
+  line-height: 1.45;
+  margin-top: 4px;
 }
 
 .pickDetail {
@@ -990,7 +1004,6 @@ textarea {
     border-right: 0;
   }
 
-  .insightGrid,
   .suggestionList,
   .liveDataList {
     grid-template-columns: 1fr;

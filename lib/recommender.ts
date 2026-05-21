@@ -157,6 +157,77 @@ function explorationBonus(suggestion: Suggestion, index: number) {
   return sourceBonus + (index % 3) * 0.006;
 }
 
+function normalizeTitle(value: string) {
+  const stopWords = new Set(["a", "an", "and", "at", "do", "find", "for", "go", "in", "of", "one", "the", "to", "try", "with"]);
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 2 && !stopWords.has(word))
+    .sort()
+    .join(" ");
+}
+
+function tagSimilarity(left: Suggestion, right: Suggestion) {
+  const leftTags = new Set(left.tags.filter((tag) => tag !== "city-idea"));
+  const rightTags = new Set(right.tags.filter((tag) => tag !== "city-idea"));
+  if (leftTags.size === 0 || rightTags.size === 0) return 0;
+
+  const shared = [...leftTags].filter((tag) => rightTags.has(tag)).length;
+  return shared / Math.min(leftTags.size, rightTags.size);
+}
+
+function duplicateStrength(left: Suggestion, right: Suggestion) {
+  if (left.id === right.id) return 1;
+  if (left.category !== right.category) return 0;
+
+  const leftTitle = normalizeTitle(left.title);
+  const rightTitle = normalizeTitle(right.title);
+  const titleMatch =
+    leftTitle.length > 0 &&
+    rightTitle.length > 0 &&
+    (leftTitle === rightTitle || leftTitle.includes(rightTitle) || rightTitle.includes(leftTitle));
+  const similarTags = tagSimilarity(left, right);
+
+  if (titleMatch && similarTags >= 0.34) return 0.9;
+  if (titleMatch) return 0.75;
+  if (similarTags >= 0.75 && Math.abs(left.durationHours - right.durationHours) <= 0.75) return 0.7;
+
+  return 0;
+}
+
+function sourcePriority(suggestion: Suggestion) {
+  if (suggestion.ownerUserId) return 4;
+  if (!suggestion.tags.includes("city-idea")) return 3;
+  if (suggestion.source === "productive") return 2;
+  return 1;
+}
+
+function preferSuggestion(left: Suggestion, right: Suggestion) {
+  const priorityGap = sourcePriority(left) - sourcePriority(right);
+  if (priorityGap !== 0) return priorityGap > 0 ? left : right;
+
+  const leftSpecificity = left.tags.length + left.description.length / 120 - left.distanceMiles / 8;
+  const rightSpecificity = right.tags.length + right.description.length / 120 - right.distanceMiles / 8;
+  return leftSpecificity >= rightSpecificity ? left : right;
+}
+
+export function dedupeSuggestions(suggestions: Suggestion[]) {
+  const deduped: Suggestion[] = [];
+
+  for (const suggestion of suggestions) {
+    const duplicateIndex = deduped.findIndex((existing) => duplicateStrength(existing, suggestion) >= 0.7);
+    if (duplicateIndex === -1) {
+      deduped.push(suggestion);
+      continue;
+    }
+
+    deduped[duplicateIndex] = preferSuggestion(deduped[duplicateIndex], suggestion);
+  }
+
+  return deduped;
+}
+
 export function rankSuggestions(
   suggestions: Suggestion[],
   context: DayContext,
@@ -165,7 +236,7 @@ export function rankSuggestions(
   const weights = trainLogisticRegression(feedback);
   const hasEnoughTrainingData = feedback.length >= 4;
 
-  return suggestions
+  return dedupeSuggestions(suggestions)
     .map((suggestion, index) => {
       const features = extractFeatures(suggestion, context);
       const ruleResult = scoreRules(suggestion, context);

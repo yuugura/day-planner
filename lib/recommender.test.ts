@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractFeatures, predictWithWeights, rankSuggestions, trainLogisticRegression } from "./recommender";
+import { dedupeSuggestions, extractFeatures, predictWithWeights, rankSuggestions, trainLogisticRegression } from "./recommender";
 import type { DayContext, FeedbackRecord, Suggestion } from "./types";
 
 const context: DayContext = {
@@ -108,6 +108,61 @@ describe("trainLogisticRegression", () => {
 
     expect(weights.tag_overlap).toBeGreaterThan(0);
     expect(weights.distance).toBeLessThan(0);
+  });
+});
+
+describe("dedupeSuggestions", () => {
+  it("removes overlapping city ideas while keeping the stored suggestion", () => {
+    const generatedCafe: Suggestion = {
+      ...indoorSuggestion,
+      id: "city-idea-cafe",
+      title: "Try a cozy cafe stop",
+      tags: ["city-idea", "indoors", "food", "low-planning"]
+    };
+
+    const deduped = dedupeSuggestions([generatedCafe, indoorSuggestion]);
+
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0].id).toBe("indoor-food");
+  });
+
+  it("keeps distinct ideas in the same category", () => {
+    const lunchSuggestion: Suggestion = {
+      ...indoorSuggestion,
+      id: "lunch",
+      title: "Try a lunch counter",
+      tags: ["food", "lunch"]
+    };
+    const dinnerSuggestion: Suggestion = {
+      ...indoorSuggestion,
+      id: "dinner",
+      title: "Plan a dinner walk",
+      durationHours: 2,
+      tags: ["food", "dinner", "fresh-air"]
+    };
+
+    expect(dedupeSuggestions([lunchSuggestion, dinnerSuggestion])).toHaveLength(2);
+  });
+
+  it("prefers personal suggestions over generated duplicates", () => {
+    const personalSuggestion: Suggestion = {
+      ...indoorSuggestion,
+      id: "custom-cafe",
+      ownerUserId: "user-a",
+      title: "Try a cozy cafe stop",
+      tags: ["indoors", "food", "low-planning"]
+    };
+    const generatedCafe: Suggestion = {
+      ...personalSuggestion,
+      id: "city-idea-cafe",
+      ownerUserId: null,
+      tags: ["city-idea", "indoors", "food", "low-planning"]
+    };
+
+    const deduped = dedupeSuggestions([generatedCafe, personalSuggestion]);
+
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0].id).toBe("custom-cafe");
   });
 });
 
