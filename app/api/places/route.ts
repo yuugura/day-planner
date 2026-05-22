@@ -1,8 +1,21 @@
 import { NextResponse } from "next/server";
 import { fetchPlaceSuggestionsSafe } from "@/lib/places";
+import { checkRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
 import type { PlaceLookup } from "@/lib/types";
 
 export async function POST(request: Request) {
+  const rateLimit = checkRateLimit(request, {
+    namespace: "places",
+    limit: 10,
+    windowMs: 60 * 1000
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many nearby option refreshes. Please wait a moment and try again." },
+      { status: 429, headers: rateLimitHeaders(rateLimit) }
+    );
+  }
+
   const body = (await request.json().catch(() => ({}))) as Partial<PlaceLookup> & {
     refresh?: boolean;
   };

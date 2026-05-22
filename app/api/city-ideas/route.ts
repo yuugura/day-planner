@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateCityIdeaDrafts } from "@/lib/city-ideas";
+import { checkRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
 import type { DayContext } from "@/lib/types";
 
 const defaultContext: DayContext = {
@@ -17,6 +18,18 @@ const defaultContext: DayContext = {
 };
 
 export async function POST(request: Request) {
+  const rateLimit = checkRateLimit(request, {
+    namespace: "city-ideas",
+    limit: 6,
+    windowMs: 60 * 1000
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many city idea requests. Please wait a moment and try again." },
+      { status: 429, headers: rateLimitHeaders(rateLimit) }
+    );
+  }
+
   try {
     const body = (await request.json().catch(() => ({}))) as Partial<DayContext>;
     const context: DayContext = {

@@ -131,6 +131,31 @@ const initialContext: DayContext = {
   preferenceTags: ["fresh-air", "food", "low-planning"]
 };
 
+const fallbackTorontoCity: CitySearchResult = {
+  id: "fallback-toronto",
+  name: "Toronto",
+  admin1: "Ontario",
+  country: "Canada",
+  latitude: 43.6532,
+  longitude: -79.3832,
+  displayName: "Toronto, Ontario, Canada"
+};
+
+const fallbackWeatherReport: WeatherReport = {
+  city: fallbackTorontoCity.name,
+  displayName: fallbackTorontoCity.displayName,
+  condition: initialContext.weather,
+  description: "Fallback weather",
+  temperatureF: initialContext.temperatureF,
+  windMph: 0,
+  weatherCode: -1,
+  observedAt: new Date(0).toISOString(),
+  localHour: initialContext.localHour,
+  timeOfDay: initialContext.timeOfDay,
+  timeZone: initialContext.timeZone,
+  timeZoneAbbreviation: "local"
+};
+
 const emptySuggestionForm: SuggestionForm = {
   title: "",
   category: "social",
@@ -233,24 +258,17 @@ export default function Home() {
 
     try {
       const referenceArea = nextStartingArea ?? nextSelectedCity;
-      const weatherUrl = buildWeatherUrl(nextContext.city, nextSelectedCity, referenceArea);
-      const weatherResponse = await fetch(weatherUrl);
-      if (!weatherResponse.ok) {
-        const payload = (await weatherResponse.json().catch(() => ({}))) as { error?: string };
-        throw new Error(payload.error || "Weather request failed.");
-      }
-
-      const weatherPayload = (await weatherResponse.json()) as { weather: WeatherReport };
+      const weatherReportForPlan = await loadWeatherReportForPlan(nextContext, nextSelectedCity, referenceArea);
       const weatherContext: DayContext = {
         ...nextContext,
         city: nextSelectedCity.name,
-        weather: weatherPayload.weather.condition,
-        temperatureF: weatherPayload.weather.temperatureF,
-        localHour: weatherPayload.weather.localHour,
-        timeOfDay: weatherPayload.weather.timeOfDay,
-        timeZone: weatherPayload.weather.timeZone
+        weather: weatherReportForPlan.condition,
+        temperatureF: weatherReportForPlan.temperatureF,
+        localHour: weatherReportForPlan.localHour,
+        timeOfDay: weatherReportForPlan.timeOfDay,
+        timeZone: weatherReportForPlan.timeZone
       };
-      setWeatherReport(weatherPayload.weather);
+      setWeatherReport(weatherReportForPlan);
       setLoadingStage("places");
 
       const response = await fetch("/api/recommend", {
@@ -354,6 +372,28 @@ export default function Home() {
       setPlacesMessage(placesError instanceof Error ? placesError.message : "Could not refresh nearby options.");
     } finally {
       setRefreshingPlaces(false);
+    }
+  }
+
+  async function loadWeatherReportForPlan(
+    nextContext: DayContext,
+    nextSelectedCity: CitySearchResult,
+    referenceArea: CitySearchResult
+  ) {
+    try {
+      const weatherUrl = buildWeatherUrl(nextContext.city, nextSelectedCity, referenceArea);
+      const weatherResponse = await fetch(weatherUrl);
+      if (!weatherResponse.ok) {
+        const payload = (await weatherResponse.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || "Weather request failed.");
+      }
+
+      const weatherPayload = (await weatherResponse.json()) as { weather: WeatherReport };
+      return weatherPayload.weather;
+    } catch (weatherError) {
+      console.error("Using fallback weather after weather lookup failed.", weatherError);
+      setError("Weather is unavailable, so the plan is using fallback conditions.");
+      return buildFallbackWeatherReport(nextContext, nextSelectedCity, referenceArea);
     }
   }
 
@@ -777,15 +817,17 @@ export default function Home() {
         if (!response.ok) throw new Error("Could not initialize the default city.");
 
         const payload = (await response.json()) as { cities: CitySearchResult[] };
-        const defaultCity = payload.cities[0];
-        if (!defaultCity) throw new Error("Could not find the default city.");
+        const defaultCity = payload.cities[0] ?? fallbackTorontoCity;
 
         setSelectedCity(defaultCity);
         setContext({ ...initialContext, city: defaultCity.name });
         void loadRecommendations({ ...initialContext, city: defaultCity.name }, activeUserId, defaultCity, defaultCity);
       } catch (initializationError) {
         console.error(initializationError);
-        setError("Choose a city from the suggestions before planning.");
+        setSelectedCity(fallbackTorontoCity);
+        setContext({ ...initialContext, city: fallbackTorontoCity.name });
+        setError("City search is unavailable, so the app is using Toronto fallback data.");
+        void loadRecommendations({ ...initialContext, city: fallbackTorontoCity.name }, activeUserId, fallbackTorontoCity, fallbackTorontoCity);
       }
     }
 
@@ -1868,6 +1910,20 @@ function formatLocalTime(weather: WeatherReport) {
   const hour12 = weather.localHour % 12 || 12;
   const meridiem = weather.localHour < 12 ? "AM" : "PM";
   return `${hour12} ${meridiem} ${weather.timeZoneAbbreviation || weather.timeOfDay}`;
+}
+
+function buildFallbackWeatherReport(context: DayContext, selectedCity: CitySearchResult, referenceArea: CitySearchResult): WeatherReport {
+  return {
+    ...fallbackWeatherReport,
+    city: selectedCity.name,
+    displayName: referenceArea.displayName || selectedCity.displayName,
+    condition: context.weather,
+    temperatureF: context.temperatureF,
+    localHour: context.localHour,
+    timeOfDay: context.timeOfDay,
+    timeZone: context.timeZone,
+    observedAt: new Date().toISOString()
+  };
 }
 
 function buildWeatherUrl(city: string, selectedCity: CitySearchResult | null, referenceArea: CitySearchResult | null = selectedCity) {

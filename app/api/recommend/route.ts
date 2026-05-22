@@ -5,6 +5,7 @@ import { readFeedback } from "@/lib/db";
 import { fetchEventSuggestionsSafe } from "@/lib/events";
 import { summarizePlan } from "@/lib/gemini";
 import { fetchPlaceSuggestionsSafe } from "@/lib/places";
+import { checkRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
 import { rankSuggestions } from "@/lib/recommender";
 import { readSuggestions } from "@/lib/suggestions";
 import type { DayContext, PlaceLookup } from "@/lib/types";
@@ -24,6 +25,18 @@ const defaultContext: DayContext = {
 };
 
 export async function POST(request: Request) {
+  const rateLimit = checkRateLimit(request, {
+    namespace: "recommend",
+    limit: 12,
+    windowMs: 60 * 1000
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many planning requests. Please wait a moment and try again." },
+      { status: 429, headers: rateLimitHeaders(rateLimit) }
+    );
+  }
+
   const body = (await request.json().catch(() => ({}))) as Partial<DayContext> & {
     userId?: string;
     place?: PlaceLookup;

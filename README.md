@@ -71,6 +71,8 @@ Suggestions are stored in Postgres and loaded by `lib/suggestions.ts`. If the da
 - `GET /api/cities?query=Tor` returns city autocomplete options from Open-Meteo geocoding.
 - `GET /api/weather?city=Toronto` fetches current city weather using Open-Meteo and maps it into the recommender's weather buckets.
 
+Expensive POST routes use a small in-process per-client rate limit to reduce accidental API/key burn: `/api/recommend`, `/api/places`, and `/api/city-ideas` return `429` with rate-limit headers when the cooldown is exceeded.
+
 ## Recommender
 
 The recommender is hybrid:
