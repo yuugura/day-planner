@@ -10,7 +10,7 @@ export type AuthSession = {
   user: AuthUser;
 };
 
-export const authCookieName = "day_planner_session";
+export const authCookieName = "what_now_session";
 
 const sessionDays = 30;
 const passwordIterations = 210000;

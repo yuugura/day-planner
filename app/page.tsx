@@ -61,6 +61,11 @@ type AuthUser = {
   id: string;
   email: string;
 };
+type AppCapabilities = {
+  persistence: boolean;
+  auth: boolean;
+  passwordResetEmail: boolean;
+};
 type FeedbackMemory = {
   feedbackCount: number;
   likesCount: number;
@@ -110,8 +115,9 @@ const availableHourOptions = [
   { label: "8 hours", value: 8 },
   { label: "All day", value: allDayHours }
 ];
-const userStorageKey = "day-planner-user-id";
-const notTodaySkipsStoragePrefix = "day-planner-not-today-skips";
+const legacyUserStorageKey = "day-planner-user-id";
+const userStorageKey = "what-now-user-id";
+const notTodaySkipsStoragePrefix = "what-now-not-today-skips";
 const visiblePickCount = 4;
 const planningLoadingStages: LoadingStage[] = ["weather", "places", "events", "ideas", "ranking"];
 
@@ -180,6 +186,7 @@ export default function Home() {
   const [dismissedPickIds, setDismissedPickIds] = useState<string[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [anonymousUserId, setAnonymousUserId] = useState<string | null>(null);
+  const [capabilities, setCapabilities] = useState<AppCapabilities | null>(null);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>("signin");
   const [authEmail, setAuthEmail] = useState("");
@@ -220,6 +227,8 @@ export default function Home() {
   const displayedTemperature = formatTemperatureC(weatherReport ? weatherReport.temperatureF : context.temperatureF);
   const loadingMessage = loading ? getPlanningLoadingMessage(loadingStage, selectedCity?.name || context.city) : null;
   const isSuggestionBuilderVisible = isSuggestionFormOpen || editingSuggestionId !== null;
+  const persistenceEnabled = capabilities?.persistence ?? false;
+  const authEnabled = capabilities?.auth ?? false;
 
   useEffect(() => {
     if (!loading) return;
@@ -450,6 +459,10 @@ export default function Home() {
 
   async function saveSuggestion() {
     if (!userId) return;
+    if (!persistenceEnabled) {
+      setSuggestionMessage("Personal suggestions need database persistence. This demo is using the built-in suggestion set.");
+      return;
+    }
 
     setSavingSuggestion(true);
     setSuggestionMessage(null);
@@ -489,6 +502,8 @@ export default function Home() {
   }
 
   function editSuggestion(suggestion: Suggestion) {
+    if (!persistenceEnabled) return;
+
     setEditingSuggestionId(suggestion.id);
     setIsSuggestionFormOpen(true);
     setSuggestionForm({
@@ -510,6 +525,10 @@ export default function Home() {
 
   async function deleteSuggestion(suggestion: Suggestion) {
     if (!userId || !window.confirm(`Delete "${suggestion.title}" from your suggestions?`)) return;
+    if (!persistenceEnabled) {
+      setSuggestionMessage("Personal suggestions need database persistence. This demo is using the built-in suggestion set.");
+      return;
+    }
 
     setDeletingSuggestionId(suggestion.id);
     setSuggestionMessage(null);
@@ -653,6 +672,11 @@ export default function Home() {
   }
 
   async function submitAuth(mode: AuthMode = authMode) {
+    if (!authEnabled) {
+      setAuthMessage("Accounts need database persistence. This public demo keeps you in anonymous mode.");
+      return;
+    }
+
     if (mode === "reset-request") {
       await requestPasswordReset();
       return;
@@ -696,6 +720,11 @@ export default function Home() {
   }
 
   async function requestPasswordReset() {
+    if (!authEnabled) {
+      setAuthMessage("Accounts need database persistence. This public demo keeps you in anonymous mode.");
+      return;
+    }
+
     setAuthLoading(true);
     setAuthMessage(null);
     setAuthResetUrl(null);
@@ -723,6 +752,11 @@ export default function Home() {
   }
 
   async function confirmPasswordReset() {
+    if (!authEnabled) {
+      setAuthMessage("Accounts need database persistence. This public demo keeps you in anonymous mode.");
+      return;
+    }
+
     setAuthLoading(true);
     setAuthMessage(null);
 
@@ -779,26 +813,38 @@ export default function Home() {
 
   useEffect(() => {
     async function initializePlanner() {
+      const capabilitiesResponse = await fetch("/api/capabilities");
+      const nextCapabilities = capabilitiesResponse.ok
+        ? ((await capabilitiesResponse.json()) as AppCapabilities)
+        : { persistence: false, auth: false, passwordResetEmail: false };
+      setCapabilities(nextCapabilities);
+
       const resetToken = new URLSearchParams(window.location.search).get("resetToken");
-      if (resetToken) {
+      if (resetToken && nextCapabilities.auth) {
         setAuthMode("reset-confirm");
         setAuthResetToken(resetToken);
         setAuthMessage("Enter a new password to finish resetting your account.");
+      } else if (resetToken) {
+        setAuthMessage("Password reset links need database persistence. This public demo is anonymous.");
+        window.history.replaceState(null, "", window.location.pathname);
       }
 
-      const existingUserId = window.localStorage.getItem(userStorageKey);
+      const existingUserId = window.localStorage.getItem(userStorageKey) ?? window.localStorage.getItem(legacyUserStorageKey);
       const nextUserId = existingUserId || window.crypto.randomUUID();
       window.localStorage.setItem(userStorageKey, nextUserId);
+      window.localStorage.removeItem(legacyUserStorageKey);
       setAnonymousUserId(nextUserId);
       let activeUserId = nextUserId;
 
-      const sessionResponse = await fetch("/api/auth/session");
-      if (sessionResponse.ok) {
-        const session = (await sessionResponse.json()) as { user: AuthUser | null };
-        if (session.user) {
-          setAuthUser(session.user);
-          activeUserId = session.user.id;
-          await claimAnonymousData(nextUserId, session.user);
+      if (nextCapabilities.auth) {
+        const sessionResponse = await fetch("/api/auth/session");
+        if (sessionResponse.ok) {
+          const session = (await sessionResponse.json()) as { user: AuthUser | null };
+          if (session.user) {
+            setAuthUser(session.user);
+            activeUserId = session.user.id;
+            await claimAnonymousData(nextUserId, session.user);
+          }
         }
       }
 
@@ -907,7 +953,12 @@ export default function Home() {
                   </span>
                   <strong>{authUser ? authUser.email : "Anonymous mode"}</strong>
                 </div>
-                {authUser ? (
+                {!authEnabled ? (
+                  <div className="demoNotice" role="status">
+                    Public demo mode is anonymous. Accounts, password reset, and synced saved ideas can be enabled later with
+                    Postgres.
+                  </div>
+                ) : authUser ? (
                   <button className="secondaryButton" type="button" onClick={signOut} disabled={authLoading}>
                     <LogOut size={17} />
                     Sign out
@@ -1308,23 +1359,31 @@ export default function Home() {
           <div className="sectionHeader">
             <div>
               <span className="eyebrow">Saved by you</span>
-              <h2>{ownedSuggestions.length ? "Personal suggestions" : "No personal suggestions yet"}</h2>
+              <h2>
+                {persistenceEnabled
+                  ? ownedSuggestions.length
+                    ? "Personal suggestions"
+                    : "No personal suggestions yet"
+                  : "Demo suggestion set"}
+              </h2>
             </div>
-            <button
-              className="secondaryButton addSuggestionButton"
-              type="button"
-              onClick={() => {
-                setEditingSuggestionId(null);
-                setSuggestionForm(emptySuggestionForm);
-                setSuggestionMessage(null);
-                setIsSuggestionFormOpen(true);
-              }}
-            >
-              <Plus size={17} />
-              Add suggestion
-            </button>
+            {persistenceEnabled ? (
+              <button
+                className="secondaryButton addSuggestionButton"
+                type="button"
+                onClick={() => {
+                  setEditingSuggestionId(null);
+                  setSuggestionForm(emptySuggestionForm);
+                  setSuggestionMessage(null);
+                  setIsSuggestionFormOpen(true);
+                }}
+              >
+                <Plus size={17} />
+                Add suggestion
+              </button>
+            ) : null}
           </div>
-          {isSuggestionBuilderVisible ? (
+          {persistenceEnabled && isSuggestionBuilderVisible ? (
             <section className="suggestionBuilder" aria-label="Create or edit suggestion">
               <div className="sectionHeader">
                 <div>
@@ -1470,9 +1529,12 @@ export default function Home() {
             </section>
           ) : null}
           <div className="statusLine" role="status">
-            {suggestionMessage || `${ownedSuggestions.length} personal suggestion${ownedSuggestions.length === 1 ? "" : "s"}`}
+            {suggestionMessage ||
+              (persistenceEnabled
+                ? `${ownedSuggestions.length} personal suggestion${ownedSuggestions.length === 1 ? "" : "s"}`
+                : "This deployment uses built-in ideas. Saved personal suggestions need Postgres.")}
           </div>
-          {ownedSuggestions.length ? (
+          {persistenceEnabled && ownedSuggestions.length ? (
             <div className="ownedSuggestionList">
               {ownedSuggestions.map((suggestion) => (
                 <article className="ownedSuggestion" key={suggestion.id}>
@@ -1498,8 +1560,10 @@ export default function Home() {
                 </article>
               ))}
             </div>
-          ) : (
+          ) : persistenceEnabled ? (
             <p className="emptyText">Use Add suggestion to save one here and it will join your recommendation pool.</p>
+          ) : (
+            <p className="emptyText">You can still use city search, weather, nearby places, events, AI ideas, and likes/dislikes for this session.</p>
           )}
         </section>
       </section>

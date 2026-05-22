@@ -7,3 +7,6 @@ dist
 npm-debug.log*
 tsconfig.tsbuildinfo
 AGENTS.local.md
+
+.vercel
+.env*.local
