@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Day Planner",
-  description: "Hybrid recommender for choosing what to do today."
+  title: "What Now",
+  description: "Recommendations for deciding what to do right now."
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

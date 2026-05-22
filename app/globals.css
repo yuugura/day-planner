@@ -49,7 +49,17 @@ textarea {
   align-items: center;
   display: flex;
   gap: 14px;
+  justify-content: space-between;
   margin-bottom: 4px;
+  position: relative;
+  z-index: 20;
+}
+
+.brandIdentity {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  min-width: 0;
 }
 
 .brandMark {
@@ -61,6 +71,32 @@ textarea {
   height: 42px;
   justify-items: center;
   width: 42px;
+}
+
+.accountMenu {
+  flex: 0 0 auto;
+  position: relative;
+}
+
+.accountMenuButton {
+  align-items: center;
+  background: #edf1e8;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  height: 42px;
+  justify-content: center;
+  width: 42px;
+}
+
+.accountMenuButton:hover,
+.accountMenuButton:focus-visible,
+.accountMenuButton[aria-expanded="true"] {
+  background: var(--teal);
+  color: white;
+  outline: none;
 }
 
 h1,
@@ -102,12 +138,18 @@ h1 {
 }
 
 .authPanel {
-  background: rgba(255, 255, 255, 0.68);
+  background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 8px;
+  box-shadow: 0 16px 34px rgba(32, 34, 31, 0.16);
   display: grid;
   gap: 10px;
   padding: 12px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: min(330px, calc(100vw - 56px));
+  z-index: 30;
 }
 
 .authPanelHeader {
@@ -249,32 +291,6 @@ textarea {
   color: #165f60;
   font-size: 1.05rem;
   margin-left: auto;
-}
-
-.unitToggle {
-  background: rgba(255, 255, 255, 0.58);
-  border: 1px solid #bfd6d2;
-  border-radius: 8px;
-  display: inline-flex;
-  flex: 0 0 auto;
-  padding: 2px;
-}
-
-.unitToggle button {
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
-  color: #345d5b;
-  cursor: pointer;
-  font-size: 0.78rem;
-  font-weight: 800;
-  height: 26px;
-  width: 30px;
-}
-
-.unitToggle button.active {
-  background: var(--teal);
-  color: white;
 }
 
 .weatherStats {
@@ -461,10 +477,12 @@ textarea {
 }
 
 .suggestionBuilder {
-  border-top: 1px solid var(--line);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
   display: grid;
   gap: 14px;
-  padding-top: 18px;
+  padding: 18px;
 }
 
 .sectionHeader {
@@ -477,34 +495,6 @@ textarea {
 .sectionHeader h2 {
   font-size: 1.05rem;
   line-height: 1.2;
-}
-
-.todayBar {
-  align-items: flex-start;
-  display: flex;
-  gap: 18px;
-  justify-content: space-between;
-}
-
-.todayBar h2 {
-  font-size: clamp(2rem, 5vw, 4.5rem);
-  letter-spacing: 0;
-  line-height: 0.98;
-  max-width: 920px;
-}
-
-.scoreBadge {
-  align-items: center;
-  background: var(--rose);
-  border-radius: 8px;
-  color: white;
-  display: grid;
-  flex: 0 0 auto;
-  font-size: 1.1rem;
-  font-weight: 800;
-  height: 64px;
-  justify-items: center;
-  width: 74px;
 }
 
 .summaryStrip {
@@ -827,6 +817,12 @@ textarea {
   padding-top: 20px;
 }
 
+.addSuggestionButton {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 12px;
+}
+
 .ownedSuggestionList {
   display: grid;
   gap: 10px;
@@ -1048,16 +1044,17 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .todayBar {
-    flex-direction: column;
-  }
-
-  .todayBar h2 {
-    font-size: 2.35rem;
-  }
-
   .resultTabs {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .ownedSuggestions > .sectionHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .addSuggestionButton {
+    align-self: flex-start;
   }
 }

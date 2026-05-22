@@ -50,9 +50,9 @@ async function sendPasswordResetEmail(email: string, resetUrl: string) {
     body: JSON.stringify({
       from,
       to: email,
-      subject: "Reset your Day Planner password",
-      html: `<p>Use this link to reset your Day Planner password:</p><p><a href="${resetUrl}">Reset password</a></p><p>This link expires in 30 minutes.</p>`,
-      text: `Use this link to reset your Day Planner password: ${resetUrl}\n\nThis link expires in 30 minutes.`
+      subject: "Reset your What Now password",
+      html: `<p>Use this link to reset your What Now password:</p><p><a href="${resetUrl}">Reset password</a></p><p>This link expires in 30 minutes.</p>`,
+      text: `Use this link to reset your What Now password: ${resetUrl}\n\nThis link expires in 30 minutes.`
     })
   });
 

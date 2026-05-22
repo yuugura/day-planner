@@ -53,7 +53,6 @@ type PlannerResponse = {
   liveEventCount: number;
 };
 
-type TemperatureUnit = "fahrenheit" | "celsius";
 type ResultsTab = "recommendations" | "events" | "memory";
 type LocationMode = "area" | "current";
 type AuthMode = "signin" | "signup" | "reset-request" | "reset-confirm";
@@ -112,7 +111,6 @@ const availableHourOptions = [
   { label: "All day", value: allDayHours }
 ];
 const userStorageKey = "day-planner-user-id";
-const temperatureUnitStorageKey = "day-planner-temperature-unit";
 const notTodaySkipsStoragePrefix = "day-planner-not-today-skips";
 const visiblePickCount = 4;
 const planningLoadingStages: LoadingStage[] = ["weather", "places", "events", "ideas", "ranking"];
@@ -190,8 +188,8 @@ export default function Home() {
   const [authResetUrl, setAuthResetUrl] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [isAuthPanelOpen, setIsAuthPanelOpen] = useState(false);
   const [weatherReport, setWeatherReport] = useState<WeatherReport | null>(null);
-  const [temperatureUnit, setTemperatureUnit] = useState<TemperatureUnit>("fahrenheit");
   const [citySuggestions, setCitySuggestions] = useState<CitySearchResult[]>([]);
   const [selectedCity, setSelectedCity] = useState<CitySearchResult | null>(null);
   const [citySearchLoading, setCitySearchLoading] = useState(false);
@@ -203,6 +201,7 @@ export default function Home() {
   const [suggestionCatalog, setSuggestionCatalog] = useState<Suggestion[]>([]);
   const [suggestionForm, setSuggestionForm] = useState<SuggestionForm>(emptySuggestionForm);
   const [editingSuggestionId, setEditingSuggestionId] = useState<string | null>(null);
+  const [isSuggestionFormOpen, setIsSuggestionFormOpen] = useState(false);
   const [savingSuggestion, setSavingSuggestion] = useState(false);
   const [deletingSuggestionId, setDeletingSuggestionId] = useState<string | null>(null);
   const [suggestionMessage, setSuggestionMessage] = useState<string | null>(null);
@@ -213,17 +212,14 @@ export default function Home() {
   const [refreshingPlaces, setRefreshingPlaces] = useState(false);
   const [placesMessage, setPlacesMessage] = useState<string | null>(null);
 
-  const topSuggestion = data?.suggestions[0];
   const visibleSuggestions =
     data?.suggestions.filter((suggestion) => !dismissedPickIds.includes(suggestion.id)).slice(0, visiblePickCount) ?? [];
   const selectedPick = data?.suggestions.find((suggestion) => suggestion.id === selectedPickId) ?? null;
   const hasSelectedCity = selectedCity !== null && selectedCity.name === context.city;
   const ownedSuggestions = suggestionCatalog.filter((suggestion) => suggestion.ownerUserId === userId);
-  const displayedTemperature = formatTemperature(
-    weatherReport ? weatherReport.temperatureF : context.temperatureF,
-    temperatureUnit
-  );
+  const displayedTemperature = formatTemperatureC(weatherReport ? weatherReport.temperatureF : context.temperatureF);
   const loadingMessage = loading ? getPlanningLoadingMessage(loadingStage, selectedCity?.name || context.city) : null;
+  const isSuggestionBuilderVisible = isSuggestionFormOpen || editingSuggestionId !== null;
 
   useEffect(() => {
     if (!loading) return;
@@ -247,7 +243,7 @@ export default function Home() {
     options: { resetDismissed?: boolean } = {}
   ) {
     if (!nextSelectedCity || nextSelectedCity.name !== nextContext.city) {
-      setError("Choose a city from the suggestions before planning.");
+      setError("Choose a city from the suggestions before getting ideas.");
       setShowCitySuggestions(true);
       return;
     }
@@ -392,7 +388,7 @@ export default function Home() {
       return weatherPayload.weather;
     } catch (weatherError) {
       console.error("Using fallback weather after weather lookup failed.", weatherError);
-      setError("Weather is unavailable, so the plan is using fallback conditions.");
+      setError("Weather is unavailable, so ideas are using fallback conditions.");
       return buildFallbackWeatherReport(nextContext, nextSelectedCity, referenceArea);
     }
   }
@@ -462,7 +458,7 @@ export default function Home() {
       ...suggestionForm,
       id: editingSuggestionId,
       userId,
-      distanceMiles: Number(suggestionForm.distanceMiles),
+      distanceMiles: kilometersToMiles(Number(suggestionForm.distanceMiles)),
       durationHours: Number(suggestionForm.durationHours),
       tags: suggestionForm.tags
         .split(",")
@@ -481,6 +477,7 @@ export default function Home() {
 
       setSuggestionForm(emptySuggestionForm);
       setEditingSuggestionId(null);
+      setIsSuggestionFormOpen(false);
       setSuggestionMessage(editingSuggestionId ? "Suggestion updated." : "Suggestion created.");
       await loadSuggestionCatalog(userId);
       if (hasSelectedCity) await loadRecommendations(context, userId, selectedCity);
@@ -493,13 +490,14 @@ export default function Home() {
 
   function editSuggestion(suggestion: Suggestion) {
     setEditingSuggestionId(suggestion.id);
+    setIsSuggestionFormOpen(true);
     setSuggestionForm({
       title: suggestion.title,
       category: suggestion.category,
       description: suggestion.description,
       locationLabel: suggestion.locationLabel,
       cost: suggestion.cost,
-      distanceMiles: String(suggestion.distanceMiles),
+      distanceMiles: formatDistanceKilometersForInput(suggestion.distanceMiles),
       durationHours: String(suggestion.durationHours),
       energy: suggestion.energy,
       social: suggestion.social,
@@ -528,6 +526,7 @@ export default function Home() {
       if (editingSuggestionId === suggestion.id) {
         setEditingSuggestionId(null);
         setSuggestionForm(emptySuggestionForm);
+        setIsSuggestionFormOpen(false);
       }
 
       setSuggestionMessage("Suggestion deleted.");
@@ -789,7 +788,6 @@ export default function Home() {
 
       const existingUserId = window.localStorage.getItem(userStorageKey);
       const nextUserId = existingUserId || window.crypto.randomUUID();
-      const savedTemperatureUnit = window.localStorage.getItem(temperatureUnitStorageKey);
       window.localStorage.setItem(userStorageKey, nextUserId);
       setAnonymousUserId(nextUserId);
       let activeUserId = nextUserId;
@@ -808,10 +806,6 @@ export default function Home() {
       setDismissedPickIds(loadNotTodaySkips(activeUserId));
       void loadSuggestionCatalog(activeUserId);
       void loadMemory(activeUserId);
-      if (savedTemperatureUnit === "fahrenheit" || savedTemperatureUnit === "celsius") {
-        setTemperatureUnit(savedTemperatureUnit);
-      }
-
       try {
         const response = await fetch(`/api/cities?query=${encodeURIComponent(initialContext.city)}`);
         if (!response.ok) throw new Error("Could not initialize the default city.");
@@ -883,129 +877,146 @@ export default function Home() {
     <main className="shell">
       <section className="controlPane" aria-label="Planner controls">
         <div className="brandRow">
-          <div className="brandMark">
-            <Sparkles size={20} />
+          <div className="brandIdentity">
+            <div className="brandMark">
+              <Sparkles size={20} />
+            </div>
+            <div>
+              <h1>What Now</h1>
+              <p>Good ideas for right now.</p>
+            </div>
           </div>
-          <div>
-            <h1>Day Planner</h1>
-            <p>Pick a day that fits the real you.</p>
+
+          <div className="accountMenu">
+            <button
+              aria-expanded={isAuthPanelOpen}
+              aria-label={isAuthPanelOpen ? "Close account panel" : "Open account panel"}
+              className="accountMenuButton"
+              type="button"
+              title={isAuthPanelOpen ? "Close account panel" : "Open account panel"}
+              onClick={() => setIsAuthPanelOpen((isOpen) => !isOpen)}
+            >
+              <Users size={18} />
+            </button>
+
+            {isAuthPanelOpen ? (
+              <section className="authPanel" aria-label="Account">
+                <div className="authPanelHeader">
+                  <span>
+                    <Users size={16} /> Account
+                  </span>
+                  <strong>{authUser ? authUser.email : "Anonymous mode"}</strong>
+                </div>
+                {authUser ? (
+                  <button className="secondaryButton" type="button" onClick={signOut} disabled={authLoading}>
+                    <LogOut size={17} />
+                    Sign out
+                  </button>
+                ) : (
+                  <>
+                    <div className="locationModeToggle" aria-label="Authentication mode">
+                      <button
+                        className={authMode === "signin" ? "active" : ""}
+                        type="button"
+                        onClick={() => {
+                          setAuthMode("signin");
+                          setAuthMessage(null);
+                          setAuthResetUrl(null);
+                        }}
+                      >
+                        Sign in
+                      </button>
+                      <button
+                        className={authMode === "signup" ? "active" : ""}
+                        type="button"
+                        onClick={() => {
+                          setAuthMode("signup");
+                          setAuthMessage(null);
+                          setAuthResetUrl(null);
+                        }}
+                      >
+                        Create account
+                      </button>
+                    </div>
+                    {authMode === "reset-confirm" ? null : (
+                      <label className="field">
+                        <span>Email</span>
+                        <input
+                          autoComplete="email"
+                          inputMode="email"
+                          value={authEmail}
+                          onChange={(event) => setAuthEmail(event.target.value)}
+                          placeholder="you@example.com"
+                        />
+                      </label>
+                    )}
+                    {authMode === "reset-request" ? null : (
+                      <label className="field">
+                        <span>{authMode === "reset-confirm" ? "New password" : "Password"}</span>
+                        <input
+                          autoComplete={authMode === "signin" ? "current-password" : "new-password"}
+                          type="password"
+                          value={authPassword}
+                          onChange={(event) => setAuthPassword(event.target.value)}
+                          placeholder="8+ characters"
+                        />
+                      </label>
+                    )}
+                    <button className="secondaryButton" type="button" onClick={() => submitAuth()} disabled={authLoading}>
+                      <LogIn size={17} />
+                      {authLoading
+                        ? "Working..."
+                        : authMode === "signup"
+                          ? "Create account"
+                          : authMode === "reset-request"
+                            ? "Send reset link"
+                            : authMode === "reset-confirm"
+                              ? "Reset password"
+                              : "Sign in"}
+                    </button>
+                    {authMode === "signin" ? (
+                      <button
+                        className="textButton"
+                        type="button"
+                        onClick={() => {
+                          setAuthMode("reset-request");
+                          setAuthPassword("");
+                          setAuthMessage(null);
+                        }}
+                      >
+                        Forgot password?
+                      </button>
+                    ) : null}
+                    {authMode === "reset-request" || authMode === "reset-confirm" ? (
+                      <button
+                        className="textButton"
+                        type="button"
+                        onClick={() => {
+                          setAuthMode("signin");
+                          setAuthPassword("");
+                          setAuthResetToken("");
+                          setAuthResetUrl(null);
+                          setAuthMessage(null);
+                          window.history.replaceState(null, "", window.location.pathname);
+                        }}
+                      >
+                        Back to sign in
+                      </button>
+                    ) : null}
+                    {authResetUrl ? (
+                      <a className="resetLink" href={authResetUrl}>
+                        Open development reset link
+                      </a>
+                    ) : null}
+                  </>
+                )}
+                <div className="statusLine" role="status">
+                  {authMessage || (authUser ? "Personalization now follows this account." : "Stay anonymous or sign in to sync later.")}
+                </div>
+              </section>
+            ) : null}
           </div>
         </div>
-
-        <section className="authPanel" aria-label="Account">
-          <div className="authPanelHeader">
-            <span>
-              <Users size={16} /> Account
-            </span>
-            <strong>{authUser ? authUser.email : "Anonymous mode"}</strong>
-          </div>
-          {authUser ? (
-            <button className="secondaryButton" type="button" onClick={signOut} disabled={authLoading}>
-              <LogOut size={17} />
-              Sign out
-            </button>
-          ) : (
-            <>
-              <div className="locationModeToggle" aria-label="Authentication mode">
-                <button
-                  className={authMode === "signin" ? "active" : ""}
-                  type="button"
-                  onClick={() => {
-                    setAuthMode("signin");
-                    setAuthMessage(null);
-                    setAuthResetUrl(null);
-                  }}
-                >
-                  Sign in
-                </button>
-                <button
-                  className={authMode === "signup" ? "active" : ""}
-                  type="button"
-                  onClick={() => {
-                    setAuthMode("signup");
-                    setAuthMessage(null);
-                    setAuthResetUrl(null);
-                  }}
-                >
-                  Create account
-                </button>
-              </div>
-              {authMode === "reset-confirm" ? null : (
-                <label className="field">
-                  <span>Email</span>
-                  <input
-                    autoComplete="email"
-                    inputMode="email"
-                    value={authEmail}
-                    onChange={(event) => setAuthEmail(event.target.value)}
-                    placeholder="you@example.com"
-                  />
-                </label>
-              )}
-              {authMode === "reset-request" ? null : (
-                <label className="field">
-                  <span>{authMode === "reset-confirm" ? "New password" : "Password"}</span>
-                  <input
-                    autoComplete={authMode === "signin" ? "current-password" : "new-password"}
-                    type="password"
-                    value={authPassword}
-                    onChange={(event) => setAuthPassword(event.target.value)}
-                    placeholder="8+ characters"
-                  />
-                </label>
-              )}
-              <button className="secondaryButton" type="button" onClick={() => submitAuth()} disabled={authLoading}>
-                <LogIn size={17} />
-                {authLoading
-                  ? "Working..."
-                  : authMode === "signup"
-                    ? "Create account"
-                    : authMode === "reset-request"
-                      ? "Send reset link"
-                      : authMode === "reset-confirm"
-                        ? "Reset password"
-                        : "Sign in"}
-              </button>
-              {authMode === "signin" ? (
-                <button
-                  className="textButton"
-                  type="button"
-                  onClick={() => {
-                    setAuthMode("reset-request");
-                    setAuthPassword("");
-                    setAuthMessage(null);
-                  }}
-                >
-                  Forgot password?
-                </button>
-              ) : null}
-              {authMode === "reset-request" || authMode === "reset-confirm" ? (
-                <button
-                  className="textButton"
-                  type="button"
-                  onClick={() => {
-                    setAuthMode("signin");
-                    setAuthPassword("");
-                    setAuthResetToken("");
-                    setAuthResetUrl(null);
-                    setAuthMessage(null);
-                    window.history.replaceState(null, "", window.location.pathname);
-                  }}
-                >
-                  Back to sign in
-                </button>
-              ) : null}
-              {authResetUrl ? (
-                <a className="resetLink" href={authResetUrl}>
-                  Open development reset link
-                </a>
-              ) : null}
-            </>
-          )}
-          <div className="statusLine" role="status">
-            {authMessage || (authUser ? "Personalization now follows this account." : "Stay anonymous or sign in to sync later.")}
-          </div>
-        </section>
 
         <div className="field cityField">
           <span>
@@ -1095,22 +1106,6 @@ export default function Home() {
             <span>
               <CloudSun size={16} /> Weather
             </span>
-            <div className="unitToggle" aria-label="Temperature unit">
-              <button
-                className={temperatureUnit === "fahrenheit" ? "active" : ""}
-                type="button"
-                onClick={() => updateTemperatureUnit("fahrenheit", setTemperatureUnit)}
-              >
-                F
-              </button>
-              <button
-                className={temperatureUnit === "celsius" ? "active" : ""}
-                type="button"
-                onClick={() => updateTemperatureUnit("celsius", setTemperatureUnit)}
-              >
-                C
-              </button>
-            </div>
             <strong>{weatherReport ? weatherReport.description : context.weather}</strong>
           </div>
           <div className="weatherStats">
@@ -1118,7 +1113,7 @@ export default function Home() {
               <Thermometer size={15} /> {displayedTemperature}
             </span>
             <span>
-              <Wind size={15} /> {weatherReport ? `${weatherReport.windMph} mph` : "Not fetched"}
+              <Wind size={15} /> {weatherReport ? formatWindKph(weatherReport.windMph) : "Not fetched"}
             </span>
             <span>
               <Clock3 size={15} /> {weatherReport ? formatLocalTime(weatherReport) : context.timeOfDay}
@@ -1195,174 +1190,19 @@ export default function Home() {
 
         <button className="primaryButton" type="button" onClick={() => loadRecommendations()} disabled={loading || !hasSelectedCity}>
           <Send size={17} />
-          {loading ? "Planning..." : "Plan my day"}
+          {loading ? "Finding ideas..." : "Show me ideas"}
         </button>
         <div className="statusLine" role="status">
           <Clock3 size={15} />
-          {error || loadingMessage || (lastPlannedAt ? `Last planned at ${lastPlannedAt}` : "Ready to plan")}
+          {error || loadingMessage || (lastPlannedAt ? `Last updated at ${lastPlannedAt}` : "Ready when you are")}
         </div>
 
-        <section className="suggestionBuilder" aria-label="Create or edit suggestion">
-          <div className="sectionHeader">
-            <div>
-              <span className="eyebrow">Your ideas</span>
-              <h2>{editingSuggestionId ? "Edit suggestion" : "New suggestion"}</h2>
-            </div>
-            {editingSuggestionId ? (
-              <button
-                aria-label="Cancel editing"
-                className="iconButton"
-                type="button"
-                onClick={() => {
-                  setEditingSuggestionId(null);
-                  setSuggestionForm(emptySuggestionForm);
-                  setSuggestionMessage(null);
-                }}
-              >
-                <X size={17} />
-              </button>
-            ) : null}
-          </div>
-
-          <label className="field">
-            <span>Title</span>
-            <input
-              value={suggestionForm.title}
-              onChange={(event) => setSuggestionForm({ ...suggestionForm, title: event.target.value })}
-              placeholder="Sunday market browse"
-            />
-          </label>
-          <label className="field">
-            <span>Description</span>
-            <textarea
-              value={suggestionForm.description}
-              onChange={(event) => setSuggestionForm({ ...suggestionForm, description: event.target.value })}
-              placeholder="A quick, low-pressure outing with a snack stop."
-            />
-          </label>
-          <label className="field">
-            <span>Location</span>
-            <input
-              value={suggestionForm.locationLabel}
-              onChange={(event) => setSuggestionForm({ ...suggestionForm, locationLabel: event.target.value })}
-              placeholder="Nearby market street"
-            />
-          </label>
-
-          <div className="grid2">
-            <SelectField
-              icon={null}
-              label="Category"
-              value={suggestionForm.category}
-              options={categoryOptions}
-              onChange={(category) => setSuggestionForm({ ...suggestionForm, category: category as SuggestionCategory })}
-            />
-            <SelectField
-              icon={null}
-              label="Cost"
-              value={suggestionForm.cost}
-              options={["free", "low", "medium", "high"]}
-              onChange={(cost) => setSuggestionForm({ ...suggestionForm, cost: cost as CostLevel })}
-            />
-          </div>
-
-          <div className="grid2">
-            <label className="field">
-              <span>Distance</span>
-              <input
-                min="0"
-                step="0.1"
-                type="number"
-                value={suggestionForm.distanceMiles}
-                onChange={(event) => setSuggestionForm({ ...suggestionForm, distanceMiles: event.target.value })}
-              />
-            </label>
-            <label className="field">
-              <span>Hours</span>
-              <input
-                min="0.25"
-                step="0.25"
-                type="number"
-                value={suggestionForm.durationHours}
-                onChange={(event) => setSuggestionForm({ ...suggestionForm, durationHours: event.target.value })}
-              />
-            </label>
-          </div>
-
-          <div className="grid2">
-            <SelectField
-              icon={null}
-              label="Energy"
-              value={suggestionForm.energy}
-              options={["low", "medium", "high"]}
-              onChange={(energy) => setSuggestionForm({ ...suggestionForm, energy: energy as EnergyLevel })}
-            />
-            <SelectField
-              icon={null}
-              label="Social"
-              value={suggestionForm.social}
-              options={["solo", "pair", "group", "flexible"]}
-              onChange={(social) => setSuggestionForm({ ...suggestionForm, social: social as SocialSetting })}
-            />
-          </div>
-
-          <div className="field">
-            <span>Weather fit</span>
-            <div className="tags">
-              {weatherOptions.map((weather) => {
-                const selected = suggestionForm.weatherFit.includes(weather);
-                return (
-                  <button
-                    className={selected ? "tag selected" : "tag"}
-                    key={weather}
-                    type="button"
-                    onClick={() =>
-                      setSuggestionForm({
-                        ...suggestionForm,
-                        weatherFit: selected
-                          ? suggestionForm.weatherFit.filter((item) => item !== weather)
-                          : [...suggestionForm.weatherFit, weather]
-                      })
-                    }
-                  >
-                    {weather}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <label className="field">
-            <span>Tags</span>
-            <input
-              value={suggestionForm.tags}
-              onChange={(event) => setSuggestionForm({ ...suggestionForm, tags: event.target.value })}
-              placeholder="food, low-planning, fresh-air"
-            />
-          </label>
-
-          <button className="secondaryButton" type="button" onClick={saveSuggestion} disabled={savingSuggestion}>
-            {editingSuggestionId ? <Save size={17} /> : <Plus size={17} />}
-            {savingSuggestion ? "Saving..." : editingSuggestionId ? "Save changes" : "Add suggestion"}
-          </button>
-          <div className="statusLine" role="status">
-            {suggestionMessage || `${ownedSuggestions.length} personal suggestion${ownedSuggestions.length === 1 ? "" : "s"}`}
-          </div>
-        </section>
       </section>
 
       <section className="resultsPane" aria-live="polite">
-        <div className="todayBar">
-          <div>
-            <span className="eyebrow">Today in {context.city || "your city"}</span>
-            <h2>{topSuggestion ? topSuggestion.title : "Finding a good fit"}</h2>
-          </div>
-          <div className="scoreBadge">{topSuggestion ? `${Math.round(topSuggestion.score * 100)}%` : "--"}</div>
-        </div>
-
         <div className="summaryStrip">
           <Coffee size={18} />
-          <p>{loadingMessage || data?.summary || "Recommendations will adapt as you tune the day and give feedback."}</p>
+          <p>{loadingMessage || data?.summary || "Ideas will adapt as you tune the moment and give feedback."}</p>
         </div>
 
         <div className="resultsToolbar">
@@ -1445,8 +1285,8 @@ export default function Home() {
             {data && visibleSuggestions.length === 0 ? (
               <EmptyState
                 icon={<SkipForward size={18} />}
-                title="No more picks for today"
-                body="You have skipped or disliked the visible picks. Change the plan details for a different angle, or check again tomorrow."
+                title="No more picks right now"
+                body="You have skipped or disliked the visible picks. Change the details for a different angle, or check again later."
               />
             ) : null}
           </div>
@@ -1470,6 +1310,167 @@ export default function Home() {
               <span className="eyebrow">Saved by you</span>
               <h2>{ownedSuggestions.length ? "Personal suggestions" : "No personal suggestions yet"}</h2>
             </div>
+            <button
+              className="secondaryButton addSuggestionButton"
+              type="button"
+              onClick={() => {
+                setEditingSuggestionId(null);
+                setSuggestionForm(emptySuggestionForm);
+                setSuggestionMessage(null);
+                setIsSuggestionFormOpen(true);
+              }}
+            >
+              <Plus size={17} />
+              Add suggestion
+            </button>
+          </div>
+          {isSuggestionBuilderVisible ? (
+            <section className="suggestionBuilder" aria-label="Create or edit suggestion">
+              <div className="sectionHeader">
+                <div>
+                  <span className="eyebrow">Your ideas</span>
+                  <h2>{editingSuggestionId ? "Edit suggestion" : "New suggestion"}</h2>
+                </div>
+                <button
+                  aria-label="Cancel suggestion form"
+                  className="iconButton"
+                  type="button"
+                  onClick={() => {
+                    setEditingSuggestionId(null);
+                    setIsSuggestionFormOpen(false);
+                    setSuggestionForm(emptySuggestionForm);
+                    setSuggestionMessage(null);
+                  }}
+                >
+                  <X size={17} />
+                </button>
+              </div>
+
+              <label className="field">
+                <span>Title</span>
+                <input
+                  value={suggestionForm.title}
+                  onChange={(event) => setSuggestionForm({ ...suggestionForm, title: event.target.value })}
+                  placeholder="Sunday market browse"
+                />
+              </label>
+              <label className="field">
+                <span>Description</span>
+                <textarea
+                  value={suggestionForm.description}
+                  onChange={(event) => setSuggestionForm({ ...suggestionForm, description: event.target.value })}
+                  placeholder="A quick, low-pressure outing with a snack stop."
+                />
+              </label>
+              <label className="field">
+                <span>Location</span>
+                <input
+                  value={suggestionForm.locationLabel}
+                  onChange={(event) => setSuggestionForm({ ...suggestionForm, locationLabel: event.target.value })}
+                  placeholder="Nearby market street"
+                />
+              </label>
+
+              <div className="grid2">
+                <SelectField
+                  icon={null}
+                  label="Category"
+                  value={suggestionForm.category}
+                  options={categoryOptions}
+                  onChange={(category) => setSuggestionForm({ ...suggestionForm, category: category as SuggestionCategory })}
+                />
+                <SelectField
+                  icon={null}
+                  label="Cost"
+                  value={suggestionForm.cost}
+                  options={["free", "low", "medium", "high"]}
+                  onChange={(cost) => setSuggestionForm({ ...suggestionForm, cost: cost as CostLevel })}
+                />
+              </div>
+
+              <div className="grid2">
+                <label className="field">
+                  <span>Distance (km)</span>
+                  <input
+                    min="0"
+                    step="0.1"
+                    type="number"
+                    value={suggestionForm.distanceMiles}
+                    onChange={(event) => setSuggestionForm({ ...suggestionForm, distanceMiles: event.target.value })}
+                  />
+                </label>
+                <label className="field">
+                  <span>Hours</span>
+                  <input
+                    min="0.25"
+                    step="0.25"
+                    type="number"
+                    value={suggestionForm.durationHours}
+                    onChange={(event) => setSuggestionForm({ ...suggestionForm, durationHours: event.target.value })}
+                  />
+                </label>
+              </div>
+
+              <div className="grid2">
+                <SelectField
+                  icon={null}
+                  label="Energy"
+                  value={suggestionForm.energy}
+                  options={["low", "medium", "high"]}
+                  onChange={(energy) => setSuggestionForm({ ...suggestionForm, energy: energy as EnergyLevel })}
+                />
+                <SelectField
+                  icon={null}
+                  label="Social"
+                  value={suggestionForm.social}
+                  options={["solo", "pair", "group", "flexible"]}
+                  onChange={(social) => setSuggestionForm({ ...suggestionForm, social: social as SocialSetting })}
+                />
+              </div>
+
+              <div className="field">
+                <span>Weather fit</span>
+                <div className="tags">
+                  {weatherOptions.map((weather) => {
+                    const selected = suggestionForm.weatherFit.includes(weather);
+                    return (
+                      <button
+                        className={selected ? "tag selected" : "tag"}
+                        key={weather}
+                        type="button"
+                        onClick={() =>
+                          setSuggestionForm({
+                            ...suggestionForm,
+                            weatherFit: selected
+                              ? suggestionForm.weatherFit.filter((item) => item !== weather)
+                              : [...suggestionForm.weatherFit, weather]
+                          })
+                        }
+                      >
+                        {weather}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <label className="field">
+                <span>Tags</span>
+                <input
+                  value={suggestionForm.tags}
+                  onChange={(event) => setSuggestionForm({ ...suggestionForm, tags: event.target.value })}
+                  placeholder="food, low-planning, fresh-air"
+                />
+              </label>
+
+              <button className="secondaryButton" type="button" onClick={saveSuggestion} disabled={savingSuggestion}>
+                {editingSuggestionId ? <Save size={17} /> : <Plus size={17} />}
+                {savingSuggestion ? "Saving..." : editingSuggestionId ? "Save changes" : "Add suggestion"}
+              </button>
+            </section>
+          ) : null}
+          <div className="statusLine" role="status">
+            {suggestionMessage || `${ownedSuggestions.length} personal suggestion${ownedSuggestions.length === 1 ? "" : "s"}`}
           </div>
           {ownedSuggestions.length ? (
             <div className="ownedSuggestionList">
@@ -1498,7 +1499,7 @@ export default function Home() {
               ))}
             </div>
           ) : (
-            <p className="emptyText">Create one in the left panel and it will join your recommendation pool.</p>
+            <p className="emptyText">Use Add suggestion to save one here and it will join your recommendation pool.</p>
           )}
         </section>
       </section>
@@ -1654,7 +1655,7 @@ function SuggestionCard({
       <div className="metaRow">
         <span>{suggestion.category}</span>
         <span>{suggestion.cost}</span>
-        <span>{suggestion.distanceMiles.toFixed(1)} mi</span>
+        <span>{formatDistanceKilometers(suggestion.distanceMiles)}</span>
         <span>{suggestion.durationHours}h</span>
       </div>
       <div className="reasonRow">
@@ -1672,7 +1673,7 @@ function SuggestionCard({
           aria-label={`Skip ${suggestion.title}`}
           className="iconButton"
           type="button"
-          title="Skip for today"
+          title="Skip for now"
           onClick={onSkip}
         >
           <SkipForward size={17} />
@@ -1792,7 +1793,7 @@ function LiveSuggestionList({
           <p>{item.description}</p>
           <div className="metaRow">
             <span>{item.cost}</span>
-            <span>{item.distanceMiles.toFixed(1)} mi</span>
+            <span>{formatDistanceKilometers(item.distanceMiles)}</span>
             <span>{item.durationHours}h</span>
             <span>{item.locationLabel}</span>
           </div>
@@ -1833,14 +1834,24 @@ function getRelevantPlacesForPick(pick: Suggestion, places: Suggestion[]) {
     .slice(0, 12);
 }
 
-function formatTemperature(temperatureF: number, unit: TemperatureUnit) {
-  if (unit === "fahrenheit") return `${Math.round(temperatureF)} F`;
+function formatTemperatureC(temperatureF: number) {
   return `${Math.round(((temperatureF - 32) * 5) / 9)} C`;
 }
 
-function updateTemperatureUnit(unit: TemperatureUnit, setTemperatureUnit: (unit: TemperatureUnit) => void) {
-  setTemperatureUnit(unit);
-  window.localStorage.setItem(temperatureUnitStorageKey, unit);
+function formatWindKph(windMph: number) {
+  return `${Math.round(windMph * 1.609344)} km/h`;
+}
+
+function formatDistanceKilometers(distanceMiles: number) {
+  return `${(distanceMiles * 1.609344).toFixed(1)} km`;
+}
+
+function formatDistanceKilometersForInput(distanceMiles: number) {
+  return String(Number((distanceMiles * 1.609344).toFixed(1)));
+}
+
+function kilometersToMiles(distanceKilometers: number) {
+  return distanceKilometers / 1.609344;
 }
 
 function getPlanningLoadingMessage(stage: LoadingStage, city: string) {
@@ -1852,13 +1863,13 @@ function getPlanningLoadingMessage(stage: LoadingStage, city: string) {
     case "places":
       return "Finding live places nearby...";
     case "events":
-      return "Looking for events that fit today...";
+      return "Looking for events that fit right now...";
     case "ideas":
       return "Generating fresh city ideas...";
     case "ranking":
-      return "Ranking today's best picks...";
+      return "Ranking the best ideas...";
     default:
-      return "Planning your day...";
+      return "Finding ideas for right now...";
   }
 }
 
